@@ -28,6 +28,20 @@ def create_zone():
     return jsonify(z.to_dict()), 201
 
 
+@bp.delete('/api/zones/<int:zone_id>')
+def delete_zone(zone_id: int):
+    """Supprime une zone."""
+    zone = Zone.query.get_or_404(zone_id)
+
+    # Vérifier si la zone contient des géocaches (placeholder - pour l'instant on supprime toujours)
+    # TODO: implémenter la logique de suppression des géocaches associées si nécessaire
+
+    db.session.delete(zone)
+    db.session.commit()
+
+    return jsonify({'message': f'Zone "{zone.name}" supprimée', 'id': zone_id}), 200
+
+
 @bp.get('/api/active-zone')
 def get_active_zone():
     zone_id_str = AppConfig.get_value('active_zone_id')
@@ -52,5 +66,15 @@ def set_active_zone():
     AppConfig.set_value('active_zone_id', str(zone.id))
     db.session.commit()
     return jsonify(zone.to_dict())
+
+
+@bp.get('/api/zones/<int:zone_id>/geocaches')
+def list_zone_geocaches(zone_id: int):
+    """Liste des géocaches pour une zone.
+    Placeholder: retourne une liste vide tant que le modèle Geocache n'est pas implémenté.
+    """
+    # Vérifier que la zone existe
+    Zone.query.get_or_404(zone_id)
+    return jsonify([])
 
 
