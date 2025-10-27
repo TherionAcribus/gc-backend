@@ -9,6 +9,7 @@ from typing import Optional
 
 import requests
 from bs4 import BeautifulSoup
+import browser_cookie3
 
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,43 @@ class GeocachingScraper:
     def __init__(self, session: Optional[requests.Session] = None) -> None:
         self.session = session or requests.Session()
         self.session.headers.setdefault('User-Agent', 'GeoApp/1.0 (+https://example.local)')
+        
+        # Charger les cookies du navigateur pour l'authentification
+        self._load_browser_cookies()
+    
+    def _load_browser_cookies(self) -> None:
+        """Charge les cookies du navigateur (Firefox, Chrome, Edge) pour s'authentifier sur Geocaching.com"""
+        logger.info("Loading browser cookies for Geocaching.com authentication...")
+        
+        browsers = [
+            ('Firefox', browser_cookie3.firefox),
+            ('Chrome', browser_cookie3.chrome),
+            ('Edge', browser_cookie3.edge),
+        ]
+        
+        for browser_name, browser_func in browsers:
+            try:
+                logger.debug(f"Trying to load cookies from {browser_name}...")
+                cookies = browser_func(domain_name='geocaching.com')
+                
+                # Vérifier qu'on a bien des cookies
+                cookie_count = 0
+                for cookie in cookies:
+                    self.session.cookies.set_cookie(cookie)
+                    cookie_count += 1
+                
+                if cookie_count > 0:
+                    logger.info(f"Successfully loaded {cookie_count} cookies from {browser_name}")
+                    return
+                else:
+                    logger.debug(f"No cookies found in {browser_name}")
+                    
+            except Exception as e:
+                logger.debug(f"Failed to load cookies from {browser_name}: {e}")
+                continue
+        
+        logger.warning("No browser cookies loaded - scraping may fail if authentication is required!")
+        logger.warning("Please make sure you are logged in to Geocaching.com in Firefox, Chrome, or Edge.")
 
     @staticmethod
     def validate_gc_code(gc_code: str) -> str:
@@ -107,232 +145,163 @@ class GeocachingScraper:
         logger.debug(f"Parsing HTML for {code}")
         soup = BeautifulSoup(resp.text, 'html.parser')
 
-        # Détecter le format de la page
-        is_old_format = 'ctl00_ContentBody_CacheName' in resp.text
-        is_new_format = 'data-testid' in resp.text
-        logger.debug(f"Format détecté - Ancien ASP.NET: {is_old_format}, Nouveau React: {is_new_format}")
-
-        # Adapter l'extraction selon le format
-        if is_old_format:
-            return self._scrape_old_format(code, soup, resp.text)
-        else:
-            return self._scrape_new_format(code, soup, resp.text)
-
-    def _scrape_old_format(self, code: str, soup: BeautifulSoup, html_text: str) -> ScrapedGeocache:
-        """Extraction pour l'ancien format ASP.NET (ctl00_ContentBody_*)"""
-        logger.debug(f"Extraction ancien format ASP.NET pour {code}")
-
         def text_or_none(el):
             return el.get_text(strip=True) if el else None
 
-        def parse_gc_coordinates(coords_text: str) -> tuple[Optional[float], Optional[float]]:
-            try:
-                parts = coords_text.split()
-                if len(parts) < 6:
-                    return None, None
-                lat_dir = parts[0].upper()
-                lat_deg = float(parts[1].replace('°', ''))
-                lat_min = float(parts[2])
-                lat = lat_deg + (lat_min / 60.0)
-                if lat_dir == 'S':
-                    lat = -lat
-                lon_dir = parts[3].upper()
-                lon_deg = float(parts[4].replace('°', ''))
-                lon_min = float(parts[5])
-                lon = lon_deg + (lon_min / 60.0)
-                if lon_dir == 'W':
-                    lon = -lon
-                return lat, lon
-            except Exception:
-                return None, None
-
-        # Nom de la cache
+        # Nom (ancien format précis)
+        logger.debug(f"[{code}] Extracting name...")
         name = None
         name_elem = soup.find('span', {'id': 'ctl00_ContentBody_CacheName'})
         if name_elem:
             name = name_elem.get_text(strip=True)
+            logger.debug(f"[{code}] Name found via ctl00_ContentBody_CacheName: {name}")
+        if not name:
+            # Nouveau format
+            h1 = soup.find('h1')
+            if h1:
+                name = h1.get_text(strip=True)
+                logger.debug(f"[{code}] Name found via h1: {name}")
+        if not name:
+            title_tag = soup.find('title')
+            if title_tag:
+                name = title_tag.get_text(strip=True)
+                logger.debug(f"[{code}] Name found via title: {name}")
         if not name:
             name = code
+            logger.debug(f"[{code}] Name fallback to code: {name}")
 
-        # Propriétaire
+        # Propriétaire (ancien format précis)
+        logger.debug(f"[{code}] Extracting owner...")
         owner_text = None
         owner_div = soup.find('div', {'id': 'ctl00_ContentBody_mcd1'})
         if owner_div:
             owner_link = owner_div.find('a')
             if owner_link:
                 owner_text = owner_link.get_text(strip=True)
+                logger.debug(f"[{code}] Owner found via ctl00_ContentBody_mcd1: {owner_text}")
+        if not owner_text:
+            # Nouveau format fallback
+            owner_el = soup.select_one('[data-testid="owner-name"], .owner-name a, .owner a')
+            owner_text = text_or_none(owner_el)
+            if owner_text:
+                logger.debug(f"[{code}] Owner found via data-testid: {owner_text}")
+        logger.debug(f"[{code}] Final owner: {owner_text}")
 
-        # Type de cache
+        # Type de cache (ancien format précis)
+        logger.debug(f"[{code}] Extracting cache type...")
         type_text = None
-        cache_link = soup.find('a', {'class': 'cacheImage'})
-        if cache_link:
-            title = cache_link.get('title', '')
-            type_text = title.replace(' Cache', '').strip() if title else None
+        type_link = soup.find('a', {'class': 'cacheImage'})
+        if type_link:
+            type_text = type_link.get('title', '').replace(' Cache', '').strip()
+            logger.debug(f"[{code}] Type found via cacheImage: {type_text}")
+        if not type_text:
+            # Nouveau format fallback
+            type_el = soup.select_one('[data-testid="cache-type"], .cache-type')
+            type_text = text_or_none(type_el)
+            if type_text:
+                logger.debug(f"[{code}] Type found via data-testid: {type_text}")
+        logger.debug(f"[{code}] Final type: {type_text}")
 
-        # Taille
+        # Taille (ancien format précis)
+        logger.debug(f"[{code}] Extracting size...")
         size_text = None
         size_div = soup.find('div', {'class': 'CacheSize'})
         if size_div:
             size_img = size_div.find('img')
-            if size_img:
-                alt = size_img.get('alt', '')
-                if ':' in alt:
-                    size_text = alt.split(':')[-1].strip().lower()
+            if size_img and size_img.get('alt'):
+                raw_size = size_img['alt'].split(':')[-1].strip().lower()
+                logger.debug(f"[{code}] Raw size from CacheSize: {raw_size}")
+                # Conversion standardisée
+                size_mapping = {
+                    'micro': 'micro',
+                    'small': 'small',
+                    'regular': 'regular',
+                    'large': 'large',
+                    'very large': 'very_large',
+                    'other': 'other',
+                    'not chosen': 'unknown',
+                    'virtual': 'virtual'
+                }
+                size_text = size_mapping.get(raw_size, raw_size)
+                logger.debug(f"[{code}] Size mapped to: {size_text}")
+        if not size_text:
+            # Nouveau format fallback
+            size_el = soup.select_one('[data-testid="container-size"], .cache-size')
+            size_text = text_or_none(size_el)
+            if size_text:
+                logger.debug(f"[{code}] Size found via data-testid: {size_text}")
+        logger.debug(f"[{code}] Final size: {size_text}")
 
-        # Difficulté et terrain (ancien format)
+        # Difficulté/Terrain (ancien format précis avec images)
+        logger.debug(f"[{code}] Extracting difficulty/terrain...")
         difficulty = None
         terrain = None
-
-        # Chercher les labels texte
-        diff_label = soup.find(string=lambda t: t and t.strip().lower() in ('difficulty:', 'difficulté:'))
-        if diff_label:
-            img = diff_label.find_next('img')
-            if img:
-                alt = img.get('alt', '')
-                m = re.search(r'(\d+(?:[.,]\d+)?)', alt)
+        
+        # Chercher les labels (FR/EN)
+        difficulty_text_node = soup.find(string=lambda t: t and t.strip().lower() in ('difficulty:', 'difficulté:'))
+        terrain_text_node = soup.find(string=lambda t: t and t.strip().lower() == 'terrain:')
+        
+        difficulty_img = None
+        terrain_img = None
+        
+        if difficulty_text_node:
+            difficulty_img = difficulty_text_node.find_next('img')
+            logger.debug(f"[{code}] Difficulty img via label: {difficulty_img is not None}")
+        if terrain_text_node:
+            terrain_img = terrain_text_node.find_next('img')
+            logger.debug(f"[{code}] Terrain img via label: {terrain_img is not None}")
+        
+        # Fallback: conteneur standard diffTerr
+        if not difficulty_img or not terrain_img:
+            container = soup.find('div', {'id': 'ctl00_ContentBody_diffTerr'})
+            logger.debug(f"[{code}] diffTerr container found: {container is not None}")
+            if container:
+                dls = container.find_all('dl')
+                logger.debug(f"[{code}] Found {len(dls)} dl elements in diffTerr")
+                if len(dls) >= 2:
+                    if not difficulty_img:
+                        difficulty_img = dls[0].find('img')
+                    if not terrain_img:
+                        terrain_img = dls[1].find('img')
+        
+        if difficulty_img and difficulty_img.get('alt'):
+            try:
+                difficulty = float(difficulty_img['alt'].split()[0])
+                logger.debug(f"[{code}] Difficulty extracted from img alt: {difficulty}")
+            except Exception as e:
+                logger.warning(f"[{code}] Failed to parse difficulty: {e}")
+        if terrain_img and terrain_img.get('alt'):
+            try:
+                terrain = float(terrain_img['alt'].split()[0])
+                logger.debug(f"[{code}] Terrain extracted from img alt: {terrain}")
+            except Exception as e:
+                logger.warning(f"[{code}] Failed to parse terrain: {e}")
+        
+        # Nouveau format fallback
+        if difficulty is None or terrain is None:
+            logger.debug(f"[{code}] Trying fallback for difficulty/terrain...")
+            def parse_rating(txt: Optional[str]) -> Optional[float]:
+                if not txt:
+                    return None
+                m = re.search(r'(\d+(?:[\.,]\d+)?)', txt)
                 if m:
-                    difficulty = float(m.group(1).replace(',', '.'))
+                    return float(m.group(1).replace(',', '.'))
+                return None
+            
+            if difficulty is None:
+                d_el = soup.select_one('[data-testid="difficulty"], .difficulty')
+                difficulty = parse_rating(text_or_none(d_el))
+                if difficulty:
+                    logger.debug(f"[{code}] Difficulty from fallback: {difficulty}")
+            if terrain is None:
+                t_el = soup.select_one('[data-testid="terrain"], .terrain')
+                terrain = parse_rating(text_or_none(t_el))
+                if terrain:
+                    logger.debug(f"[{code}] Terrain from fallback: {terrain}")
+        
+        logger.debug(f"[{code}] Final difficulty: {difficulty}, terrain: {terrain}")
 
-        terrain_label = soup.find(string=lambda t: t and t.strip().lower() == 'terrain:')
-        if terrain_label:
-            img = terrain_label.find_next('img')
-            if img:
-                alt = img.get('alt', '')
-                m = re.search(r'(\d+(?:[.,]\d+)?)', alt)
-                if m:
-                    terrain = float(m.group(1).replace(',', '.'))
-
-        # Coordonnées - chercher dans les scripts JavaScript
-        latitude = None
-        longitude = None
-        coordinates_raw = None
-
-        scripts = soup.find_all('script')
-        for script in scripts:
-            script_text = script.get_text() if script else ''
-            if 'lat' in script_text.lower() and 'lon' in script_text.lower():
-                # Chercher les vraies coordonnées
-                lat_match = re.search(r'lat[^=]*=\s*([-\d.]+)', script_text, re.IGNORECASE)
-                lon_match = re.search(r'lon[^=]*=\s*([-\d.]+)', script_text, re.IGNORECASE)
-                if lat_match and lon_match:
-                    try:
-                        latitude = float(lat_match.group(1))
-                        longitude = float(lon_match.group(1))
-                        logger.debug(f"Coordonnées trouvées dans script: {latitude}, {longitude}")
-                        break
-                    except Exception:
-                        continue
-
-        # Date de placement
-        placed_at = None
-        date_div = soup.find('div', {'id': 'ctl00_ContentBody_mcd2'})
-        if date_div:
-            txt = date_div.get_text(strip=True)
-            if ':' in txt:
-                raw = txt.split(':', 1)[1].strip()
-                for fmt in ('%d/%m/%Y', '%m/%d/%Y', '%Y-%m-%d'):
-                    try:
-                        placed_at = datetime.strptime(raw, fmt)
-                        break
-                    except Exception:
-                        continue
-
-        # Description
-        description_html = None
-        desc_el = soup.find('span', {'id': 'ctl00_ContentBody_LongDescription'})
-        if desc_el:
-            description_html = str(desc_el)
-
-        # Indices
-        hints = None
-        hint_div = soup.find('div', {'id': 'div_hint'})
-        if hint_div:
-            hints = hint_div.get_text(strip=True)
-
-        # Attributs
-        attributes = []
-        attrs_container = soup.find('div', {'class': 'WidgetBody'})
-        if attrs_container:
-            for img in attrs_container.find_all('img'):
-                title = (img.get('title') or img.get('alt') or '').strip()
-                if not title:
-                    continue
-                text_lower = title.lower()
-                if 'blank' in text_lower:
-                    continue
-                is_negative = False
-                name_only = title
-                if ':' in title:
-                    parts = title.split(':', 1)
-                    name_only = parts[0].strip()
-                    val = parts[1].strip().lower()
-                    is_negative = 'no' in val or 'non' in val
-                else:
-                    if ' - no' in text_lower or ' - non' in text_lower:
-                        is_negative = True
-                        name_only = title.split(' - ')[0].strip()
-                entry = {'name': name_only, 'is_negative': is_negative}
-                attributes.append(entry)
-
-        # Favoris - chercher dans les éléments avec "favorite"
-        favorites_count = None
-        fav_divs = soup.find_all('div', class_=lambda x: x and 'favorite' in ' '.join(x) if x else False)
-        for div in fav_divs:
-            text = div.get_text(strip=True).lower()
-            if 'favorites' in text or 'favoris' in text:
-                try:
-                    digits = ''.join(ch for ch in text if ch.isdigit())
-                    if digits:
-                        favorites_count = int(digits)
-                        break
-                except Exception:
-                    continue
-
-        # Logs count
-        logs_count = None
-        all_text = soup.get_text()
-        # Chercher "4 logs" ou similaire
-        log_match = re.search(r'(\d+)\s*log', all_text, re.IGNORECASE)
-        if log_match:
-            logs_count = int(log_match.group(1))
-
-        # Images
-        images = []
-        if desc_el:
-            for img in desc_el.find_all('img'):
-                src = img.get('src')
-                if src and not any(s in src.lower() for s in ['wpttypes', 'icons', 'smilies']):
-                    images.append({'url': src})
-
-        return ScrapedGeocache(
-            gc_code=code,
-            name=name,
-            url=f'{self.BASE_URL}{code}',
-            type=type_text,
-            size=size_text,
-            owner=owner_text,
-            difficulty=difficulty,
-            terrain=terrain,
-            latitude=latitude,
-            longitude=longitude,
-            placed_at=placed_at,
-            status='active',
-            coordinates_raw=coordinates_raw,
-            description_html=description_html,
-            hints=hints,
-            attributes=attributes or None,
-            favorites_count=favorites_count,
-            logs_count=logs_count,
-            images=images or None,
-        )
-
-    def _scrape_new_format(self, code: str, soup: BeautifulSoup, html_text: str) -> ScrapedGeocache:
-        """Extraction pour le nouveau format React (data-testid)"""
-        logger.debug(f"Extraction nouveau format React pour {code}")
-
-        def text_or_none(el):
-            return el.get_text(strip=True) if el else None
-
+        # Coordonnées brutes affichées (format GC: N 48° 51.402 E 002° 21.048)
         def parse_gc_coordinates(coords_text: str) -> tuple[Optional[float], Optional[float]]:
             try:
                 parts = coords_text.split()
@@ -354,71 +323,44 @@ class GeocachingScraper:
             except Exception:
                 return None, None
 
-        # Titre / nom
-        name = None
-        h1 = soup.find('h1')
-        if h1:
-            name = h1.get_text(strip=True)
-        if not name:
-            title_tag = soup.find('title')
-            if title_tag:
-                name = title_tag.get_text(strip=True)
-        if not name:
-            name = code
-
-        # Type, taille, propriétaire, difficulté/terrain
-        type_text = None
-        size_text = None
-        owner_text = None
-        difficulty = None
-        terrain = None
-
-        # Sélecteurs modernes
-        type_el = soup.select_one('[data-testid="cache-type"]')
-        size_el = soup.select_one('[data-testid="container-size"]')
-        owner_el = soup.select_one('[data-testid="owner-name"]')
-        d_el = soup.select_one('[data-testid="difficulty"]')
-        t_el = soup.select_one('[data-testid="terrain"]')
-
-        type_text = text_or_none(type_el)
-        size_text = text_or_none(size_el)
-        owner_text = text_or_none(owner_el)
-
-        def parse_rating(txt: Optional[str]) -> Optional[float]:
-            if not txt:
-                return None
-            m = re.search(r'(\d+(?:[\.,]\d+)?)', txt)
-            if m:
-                return float(m.group(1).replace(',', '.'))
-            return None
-
-        difficulty = parse_rating(text_or_none(d_el))
-        terrain = parse_rating(text_or_none(t_el))
-
-        # Coordonnées
+        # Extraction coordonnées (ancien format précis)
+        logger.debug(f"[{code}] Extracting coordinates...")
+        coordinates_raw = None
+        is_corrected: Optional[bool] = None
+        original_latitude: Optional[float] = None
+        original_longitude: Optional[float] = None
         latitude = None
         longitude = None
-        geo_meta = soup.select_one('meta[property="place:location:latitude"]')
-        if geo_meta and geo_meta.get('content'):
-            try:
-                latitude = float(geo_meta['content'])
-            except Exception:
-                pass
-        geo_meta = soup.select_one('meta[property="place:location:longitude"]')
-        if geo_meta and geo_meta.get('content'):
-            try:
-                longitude = float(geo_meta['content'])
-            except Exception:
-                pass
 
-        # Détection via script userDefinedCoords
-        coordinates_raw = None
-        is_corrected = None
-        original_latitude = None
-        original_longitude = None
+        coords_span = soup.find('span', {'id': 'uxLatLon'})
+        logger.debug(f"[{code}] uxLatLon span found: {coords_span is not None}")
+        
+        if coords_span:
+            coordinates_raw = coords_span.get_text(strip=True)
+            logger.debug(f"[{code}] coordinates_raw from uxLatLon: '{coordinates_raw}'")
+            
+            if not coordinates_raw or coordinates_raw == '???':
+                logger.warning(f"[{code}] Coordinates are hidden or require authentication!")
+            else:
+                lat2, lon2 = parse_gc_coordinates(coordinates_raw)
+                logger.debug(f"[{code}] Parsed coordinates: lat={lat2}, lon={lon2}")
+                if lat2 is not None and lon2 is not None:
+                    latitude = lat2
+                    longitude = lon2
+                    logger.debug(f"[{code}] Coordinates set successfully")
+            
+            # Détection coords corrigées par classe
+            classes = coords_span.get('class') or []
+            logger.debug(f"[{code}] uxLatLon classes: {classes}")
+            if any('myLatLon' in c for c in classes):
+                is_corrected = True
+                logger.debug(f"[{code}] Detected corrected coordinates via myLatLon class")
+        else:
+            logger.warning(f"[{code}] uxLatLon span NOT found - coordinates may require authentication!")
 
+        # Détection via script userDefinedCoords (si présent)
         try:
-            m = re.search(r'var\s+userDefinedCoords\s*=\s*(\{[\s\S]*?\});', html_text)
+            m = re.search(r'userDefinedCoords\s*=\s*\{[\s\S]*?\};', resp.text)
             if m:
                 block = m.group(0)
                 new_m = re.search(r'newLatLng\"?\s*:\s*\[\s*([-0-9\.]+)\s*,\s*([-0-9\.]+)\s*\]', block)
@@ -441,7 +383,22 @@ class GeocachingScraper:
         except Exception:
             pass
 
-        # Date de placement
+        # Fallback meta tags (nouveau format)
+        if latitude is None or longitude is None:
+            geo_meta = soup.select_one('meta[property="place:location:latitude"]')
+            if geo_meta and geo_meta.get('content'):
+                try:
+                    latitude = latitude or float(geo_meta['content'])
+                except Exception:
+                    pass
+            geo_meta = soup.select_one('meta[property="place:location:longitude"]')
+            if geo_meta and geo_meta.get('content'):
+                try:
+                    longitude = longitude or float(geo_meta['content'])
+                except Exception:
+                    pass
+
+        # Date de placement (si trouvée)
         placed_at = None
         date_el = soup.select_one('[data-testid="placed-on"], time[datetime]')
         if date_el and date_el.get('datetime'):
@@ -449,8 +406,26 @@ class GeocachingScraper:
                 placed_at = datetime.fromisoformat(date_el['datetime'].replace('Z', '+00:00'))
             except Exception:
                 placed_at = None
+        if not placed_at:
+            # Fallback ancienne page: ctl00_ContentBody_mcd2 -> "Hidden: dd/mm/yyyy" ou "Hidden: mm/dd/yyyy"
+            date_div = soup.find('div', {'id': 'ctl00_ContentBody_mcd2'})
+            if date_div:
+                txt = date_div.get_text(strip=True)
+                if ':' in txt:
+                    raw = txt.split(':', 1)[1].strip()
+                    for fmt in ('%d/%m/%Y', '%m/%d/%Y', '%Y-%m-%d'):
+                        try:
+                            placed_at = datetime.strptime(raw, fmt)
+                            break
+                        except Exception:
+                            continue
 
-        # Description
+        # Statut
+        status = None
+        status_el = soup.select_one('[data-testid="status"], .status')
+        status = text_or_none(status_el)
+
+        # Description HTML
         description_html = None
         desc_el = soup.find('span', {'id': 'ctl00_ContentBody_LongDescription'})
         if desc_el:
@@ -459,15 +434,15 @@ class GeocachingScraper:
             except Exception:
                 description_html = desc_el.get_text(strip=True)
 
-        # Indices
+        # Hints
         hints = None
         hint_div = soup.find('div', {'id': 'div_hint'})
         if hint_div:
             hints = hint_div.get_text(strip=True)
 
         # Attributs
-        attributes = []
-        attrs_container = soup.find('div', {'class': 'WidgetBody'})
+        attributes: list[dict] = []
+        attrs_container = soup.find('div', {'class': 'WidgetBody'}) or soup.find('div', {'id': 'ctl00_ContentBody_detailWidget'}) or soup.find('div', {'id': 'ctl00_ContentBody_AttributesDiv'})
         if attrs_container:
             for img in attrs_container.find_all('img'):
                 title = (img.get('title') or img.get('alt') or '').strip()
@@ -487,23 +462,41 @@ class GeocachingScraper:
                     if ' - no' in text_lower or ' - non' in text_lower:
                         is_negative = True
                         name_only = title.split(' - ')[0].strip()
+                base_filename = None
+                src = img.get('src') or ''
+                if src:
+                    base = src.split('/')[-1]
+                    base_filename = base.split('.')[0]
                 entry = {'name': name_only, 'is_negative': is_negative}
+                if base_filename:
+                    entry['base_filename'] = base_filename
                 attributes.append(entry)
 
         # Favoris
-        favorites_count = None
+        favorites_count: Optional[int] = None
         fav_span = soup.find('span', {'class': 'favorite-value'})
+        if not fav_span:
+            fav_container = soup.find('div', {'class': 'favorite-container'})
+            if fav_container:
+                fav_span = fav_container.find('span', {'class': 'favorite-value'})
+        if not fav_span:
+            right = soup.find('div', {'class': 'favorite right'})
+            if right:
+                fav_span = right.find('span', {'class': 'favorite-value'})
+        if not fav_span:
+            for span in soup.find_all('span'):
+                classes = span.get('class') or []
+                if 'favorite-value' in classes:
+                    fav_span = span
+                    break
         if fav_span:
             try:
-                text = fav_span.get_text(strip=True)
-                digits = ''.join(ch for ch in text if ch.isdigit())
-                if digits:
-                    favorites_count = int(digits)
+                favorites_count = int(''.join(ch for ch in fav_span.get_text(strip=True) if ch.isdigit()))
             except Exception:
-                pass
+                favorites_count = None
 
-        # Logs
-        logs_count = None
+        # Logs count
+        logs_count: Optional[int] = None
         link = soup.find('a', href=lambda x: x and 'geocache_logs.aspx' in x)
         if link:
             try:
@@ -512,15 +505,75 @@ class GeocachingScraper:
                 if digits:
                     logs_count = int(digits)
             except Exception:
-                pass
+                logs_count = None
+
+        # Waypoints additionnels
+        waypoints: list[dict] = []
+        wptable = soup.find('table', {'id': 'ctl00_ContentBody_Waypoints'})
+        if wptable:
+            rows = wptable.find_all('tr', {'class': 'BorderBottom', 'ishidden': 'false'})
+            for row in rows:
+                tds = row.find_all('td')
+                if len(tds) < 6:
+                    continue
+                prefix = (tds[2].find('span').get_text(strip=True) if tds[2].find('span') else '').strip()
+                lookup = tds[3].get_text(strip=True)
+                name_cell = tds[4]
+                name_link = name_cell.find('a')
+                if name_link:
+                    name_wp = name_link.get_text(strip=True)
+                    type_text2 = name_cell.get_text().split('(')[-1].rstrip(')')
+                else:
+                    name_wp = name_cell.get_text(strip=True)
+                    type_text2 = ''
+                coords_text = tds[5].get_text(strip=True)
+                lat_wp, lon_wp = (None, None)
+                if coords_text:
+                    lat_wp, lon_wp = parse_gc_coordinates(coords_text)
+                note = ''
+                note_row = row.find_next_sibling('tr', {'class': 'BorderBottom'})
+                if note_row:
+                    td_note = note_row.find('td', colspan=True)
+                    if td_note:
+                        note = td_note.get_text(strip=True)
+                waypoints.append({
+                    'prefix': prefix,
+                    'lookup': lookup,
+                    'name': name_wp,
+                    'type': type_text2,
+                    'latitude': lat_wp,
+                    'longitude': lon_wp,
+                    'gc_coords': coords_text,
+                    'note': note
+                })
+
+        # Checkers externes
+        checkers: list[dict] = []
+        for a in soup.find_all('a', href=True):
+            href = a['href']
+            low = href.lower()
+            if any(dom in low for dom in ['geocheck.org', 'geotjek.dk', 'geo_inputchkcoord.php']):
+                entry = {'name': 'GeoCheck', 'url': href}
+                if entry not in checkers:
+                    checkers.append(entry)
+            elif 'certitudes.org' in low:
+                entry = {'name': 'Certitude', 'url': href}
+                if entry not in checkers:
+                    checkers.append(entry)
+        if soup.find('div', {'class': 'CoordChecker'}):
+            checkers.append({'name': 'Geocaching', 'url': '#solution-checker'})
 
         # Images
-        images = []
+        images: list[dict] = []
         if desc_el:
             for img in desc_el.find_all('img'):
                 src = img.get('src')
-                if src and not any(s in src.lower() for s in ['wpttypes', 'icons', 'smilies']):
-                    images.append({'url': src})
+                if not src:
+                    continue
+                low = src.lower()
+                if any(s in low for s in ['wpttypes', 'icons', 'smilies']):
+                    continue
+                images.append({'url': src})
         gallery = soup.find('div', {'class': 'CachePageImages'})
         if gallery:
             for img in gallery.find_all('img'):
@@ -528,10 +581,30 @@ class GeocachingScraper:
                 if src:
                     images.append({'url': src})
 
-        return ScrapedGeocache(
+        # Statut trouvé
+        found = None
+        found_date = None
+        found_div = soup.find('div', {'id': 'ctl00_ContentBody_GeoNav_foundStatus'})
+        if found_div:
+            st = found_div.find('strong', {'id': 'ctl00_ContentBody_GeoNav_logText'})
+            if st and ('Found It' in st.get_text()):
+                found = True
+                date_sm = found_div.find('small', {'id': 'ctl00_ContentBody_GeoNav_logDate'})
+                if date_sm:
+                    txt = date_sm.get_text()
+                    if 'Logged on:' in txt:
+                        raw = txt.split('Logged on:')[-1].strip()
+                        for fmt in ('%m/%d/%Y', '%d/%m/%Y', '%Y-%m-%d'):
+                            try:
+                                found_date = datetime.strptime(raw, fmt)
+                                break
+                            except Exception:
+                                continue
+
+        scraped = ScrapedGeocache(
             gc_code=code,
             name=name,
-            url=f'{self.BASE_URL}{code}',
+            url=url,
             type=type_text,
             size=size_text,
             owner=owner_text,
@@ -540,7 +613,7 @@ class GeocachingScraper:
             latitude=latitude,
             longitude=longitude,
             placed_at=placed_at,
-            status='active',
+            status=status,
             coordinates_raw=coordinates_raw,
             is_corrected=is_corrected,
             original_latitude=original_latitude,
@@ -551,5 +624,15 @@ class GeocachingScraper:
             favorites_count=favorites_count,
             logs_count=logs_count,
             images=images or None,
+            waypoints=waypoints,
+            checkers=checkers,
+            # Passer aussi le statut trouvé
+            # types stables: Optional[bool]/Optional[datetime]
+            **({'found': found} if found is not None else {}),
+            **({'found_date': found_date} if found_date is not None else {}),
         )
+
+        logger.info(f"Successfully scraped {code}: name='{name}', owner='{owner_text}', type='{type_text}', size='{size_text}', difficulty={difficulty}, terrain={terrain}, coords={latitude},{longitude}, favs={favorites_count}, logs={logs_count}")
+        return scraped
+
 

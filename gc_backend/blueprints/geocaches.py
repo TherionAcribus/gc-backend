@@ -214,3 +214,47 @@ def refresh_geocache(geocache_id: int):
         db.session.rollback()
         logger.error(f"Error refreshing geocache {geocache_id}: {e}", exc_info=True)
         return jsonify({'error': 'Failed to refresh geocache'}), 500
+
+
+@bp.patch('/api/geocaches/<int:geocache_id>/move')
+def move_geocache(geocache_id: int):
+    """Déplace une géocache vers une autre zone."""
+    try:
+        data = request.get_json(silent=True) or {}
+        target_zone_id = data.get('target_zone_id')
+        
+        if not target_zone_id:
+            return jsonify({'error': 'Missing required field: target_zone_id'}), 400
+        
+        geocache = Geocache.query.get(geocache_id)
+        if not geocache:
+            return jsonify({'error': 'Geocache not found'}), 404
+        
+        # Vérifier que la zone cible existe
+        from ..models import Zone
+        target_zone = Zone.query.get(target_zone_id)
+        if not target_zone:
+            return jsonify({'error': 'Target zone not found'}), 404
+        
+        old_zone_id = geocache.zone_id
+        gc_code = geocache.gc_code
+        
+        logger.info(f"Moving geocache {gc_code} from zone {old_zone_id} to zone {target_zone_id}")
+        
+        # Mettre à jour la zone
+        geocache.zone_id = target_zone_id
+        db.session.commit()
+        
+        logger.info(f"Successfully moved geocache {gc_code}")
+        return jsonify({
+            'message': f'Geocache {gc_code} moved successfully',
+            'id': geocache.id,
+            'gc_code': geocache.gc_code,
+            'old_zone_id': old_zone_id,
+            'new_zone_id': target_zone_id,
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error moving geocache {geocache_id}: {e}", exc_info=True)
+        return jsonify({'error': 'Failed to move geocache'}), 500
