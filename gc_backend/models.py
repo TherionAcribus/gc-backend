@@ -17,7 +17,7 @@ class Zone(db.Model):
             'name': self.name,
             'description': self.description,
             'created_at': self.created_at.isoformat() if self.created_at else None,
-            'geocaches_count': 0,  # Placeholder, à remplacer quand Geocache sera implémenté
+            'geocaches_count': len(self.geocaches) if hasattr(self, 'geocaches') and self.geocaches else 0,
         }
 
 

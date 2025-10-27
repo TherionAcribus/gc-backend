@@ -68,13 +68,6 @@ def set_active_zone():
     return jsonify(zone.to_dict())
 
 
-@bp.get('/api/zones/<int:zone_id>/geocaches')
-def list_zone_geocaches(zone_id: int):
-    """Liste des géocaches pour une zone.
-    Placeholder: retourne une liste vide tant que le modèle Geocache n'est pas implémenté.
-    """
-    # Vérifier que la zone existe
-    Zone.query.get_or_404(zone_id)
-    return jsonify([])
+# La route /api/zones/<zone_id>/geocaches est fournie par le blueprint geocaches
 
 

@@ -1,8 +1,16 @@
+import logging
 from flask import Flask
 from flask_cors import CORS
 
 from .config import Config
 from .database import init_db
+
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 
 def create_app() -> Flask:
@@ -21,8 +29,10 @@ def create_app() -> Flask:
 
     # Blueprints
     from .blueprints.zones import bp as zones_bp
+    from .blueprints.geocaches import bp as geocaches_bp
 
     app.register_blueprint(zones_bp)
+    app.register_blueprint(geocaches_bp)
 
     return app
 
