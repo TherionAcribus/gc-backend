@@ -5,7 +5,7 @@ from typing import Optional
 
 from ..database import db
 from ..models import Zone
-from .models import Geocache
+from .models import Geocache, GeocacheWaypoint, GeocacheChecker
 from .scraper import GeocachingScraper
 
 
@@ -75,9 +75,44 @@ class GeocacheImporter:
             status=s.status or 'active',
             zone_id=zone_id,
         )
+        # Données enrichies
+        g.coordinates_raw = getattr(s, 'coordinates_raw', None)
+        g.is_corrected = getattr(s, 'is_corrected', None)
+        g.original_latitude = getattr(s, 'original_latitude', None)
+        g.original_longitude = getattr(s, 'original_longitude', None)
+        g.description_html = getattr(s, 'description_html', None)
+        g.hints = getattr(s, 'hints', None)
+        g.attributes = getattr(s, 'attributes', None)
+        g.favorites_count = getattr(s, 'favorites_count', None)
+        g.logs_count = getattr(s, 'logs_count', None)
+        g.images = getattr(s, 'images', None)
+        g.found = getattr(s, 'found', None)
+        g.found_date = getattr(s, 'found_date', None)
 
         try:
             db.session.add(g)
+            db.session.flush()
+
+            # Persistance des relations si disponibles
+            for w in getattr(s, 'waypoints', []) or []:
+                db.session.add(GeocacheWaypoint(
+                    geocache_id=g.id,
+                    prefix=w.get('prefix'),
+                    lookup=w.get('lookup'),
+                    name=w.get('name'),
+                    type=w.get('type'),
+                    latitude=w.get('latitude'),
+                    longitude=w.get('longitude'),
+                    gc_coords=w.get('gc_coords'),
+                    note=w.get('note'),
+                ))
+            for c in getattr(s, 'checkers', []) or []:
+                db.session.add(GeocacheChecker(
+                    geocache_id=g.id,
+                    name=c.get('name'),
+                    url=c.get('url'),
+                ))
+
             db.session.commit()
             logger.info(f"Geocache {code} imported successfully (id={g.id})")
             return g

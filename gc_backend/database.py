@@ -1,5 +1,6 @@
 import logging
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,39 @@ def init_db(app):
 
         logger.info("Creating database tables if not exist…")
         db.create_all()
+
+        # Migration légère/idempotente pour ajouter les nouvelles colonnes SQLite
+        try:
+            logger.info("Running lightweight SQLite migrations for geocache columns…")
+            existing_cols = set()
+            res = db.session.execute(text("PRAGMA table_info('geocache')"))
+            for row in res:
+                # row: (cid, name, type, notnull, dflt_value, pk)
+                existing_cols.add(row[1])
+
+            to_add: dict[str, str] = {
+                'coordinates_raw': 'TEXT',
+                'is_corrected': 'BOOLEAN',
+                'original_latitude': 'REAL',
+                'original_longitude': 'REAL',
+                'description_html': 'TEXT',
+                'hints': 'TEXT',
+                'attributes': 'JSON',
+                'favorites_count': 'INTEGER',
+                'logs_count': 'INTEGER',
+                'images': 'JSON',
+                'found': 'BOOLEAN',
+                'found_date': 'DATETIME',
+            }
+
+            for col, col_type in to_add.items():
+                if col not in existing_cols:
+                    logger.info(f"Adding missing column geocache.{col} ({col_type})")
+                    db.session.execute(text(f"ALTER TABLE geocache ADD COLUMN {col} {col_type}"))
+            db.session.commit()
+        except Exception as e:
+            logger.error(f"SQLite migration error: {e}")
+            db.session.rollback()
 
         # Zone par défaut
         try:
