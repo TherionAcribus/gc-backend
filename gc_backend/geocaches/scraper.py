@@ -42,6 +42,9 @@ class ScrapedGeocache:
     images: list[dict] | None = None
     waypoints: list[dict] = field(default_factory=list)
     checkers: list[dict] = field(default_factory=list)
+    # Statut trouvé (facultatif)
+    found: Optional[bool] = None
+    found_date: Optional[datetime] = None
 
 
 GC_CODE_RE = re.compile(r'^GC[0-9A-Z]+$')

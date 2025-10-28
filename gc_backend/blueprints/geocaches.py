@@ -1,5 +1,9 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Response, stream_with_context
 import logging
+import io
+import zipfile
+import xml.etree.ElementTree as ET
+import json
 
 from ..database import db
 from ..geocaches.models import Geocache
@@ -141,7 +145,7 @@ def refresh_geocache(geocache_id: int):
             return jsonify({'error': 'Geocache not found'}), 404
         
         gc_code = geocache.gc_code
-        zone_id = geocache.zone_id
+        # zone_id = geocache.zone_id  # réservé pour évolutions futures
         
         logger.info(f"Refreshing geocache {gc_code} (id={geocache_id})")
         
@@ -258,3 +262,129 @@ def move_geocache(geocache_id: int):
         db.session.rollback()
         logger.error(f"Error moving geocache {geocache_id}: {e}", exc_info=True)
         return jsonify({'error': 'Failed to move geocache'}), 500
+
+
+@bp.post('/api/geocaches/import-gpx')
+def import_gpx():
+    """Importe des géocaches depuis un fichier GPX (Pocket Query) ou ZIP.
+
+    Implémentation simplifiée: extrait les codes GC des fichiers GPX et
+    utilise GeocacheImporter.import_by_code(zone_id, code) pour créer/mettre à jour
+    les géocaches. Emet un flux JSON par lignes (progress streaming) compatible
+    avec le frontend.
+    """
+    try:
+        uploaded_file = request.files.get('gpxFile')
+        zone_id_raw = request.form.get('zone_id')
+        _update_existing = request.form.get('updateExisting') == 'on'  # réservé, non utilisé ici
+
+        if not uploaded_file:
+            return jsonify({'error': 'Aucun fichier sélectionné'}), 400
+        if not zone_id_raw:
+            return jsonify({'error': 'ID de zone manquant'}), 400
+
+        try:
+            zone_id = int(zone_id_raw)
+        except ValueError:
+            return jsonify({'error': 'ID de zone invalide'}), 400
+
+        importer = GeocacheImporter()
+
+        def extract_gc_codes_from_gpx_bytes(data: bytes) -> list[str]:
+            codes: list[str] = []
+            try:
+                root = ET.fromstring(data)
+            except ET.ParseError:
+                return codes
+
+            # Essayer GPX 1.0 et 1.1
+            namespaces = [
+                {'default': 'http://www.topografix.com/GPX/1/0'},
+                {'default': 'http://www.topografix.com/GPX/1/1'},
+                {},  # sans namespace (fallback)
+            ]
+
+            seen = set()
+            for ns in namespaces:
+                # wpt nodes
+                if ns:
+                    wpts = root.findall('default:wpt', ns)
+                else:
+                    wpts = root.findall('wpt')
+                for w in wpts:
+                    # name element
+                    name_elem = w.find('default:name', ns) if ns else w.find('name')
+                    if name_elem is None or not (name_elem.text or '').strip():
+                        continue
+                    waypoint_code = name_elem.text.strip()
+                    # Garder uniquement les codes principaux commençant par GC et sans suffixe '-...'
+                    if waypoint_code.startswith('GC') and '-' not in waypoint_code:
+                        if waypoint_code not in seen:
+                            seen.add(waypoint_code)
+                            codes.append(waypoint_code)
+            return codes
+
+        # Lire le fichier entier AVANT le streaming pour éviter les fermetures
+        _filename = (uploaded_file.filename or '').lower()
+        _file_bytes = uploaded_file.read()
+
+        def generate():
+            try:
+                yield json.dumps({'message': 'Analyse du fichier...', 'progress': 0}) + '\n'
+
+                gc_codes: list[str] = []
+
+                if _filename.endswith('.zip'):
+                    with zipfile.ZipFile(io.BytesIO(_file_bytes), 'r') as zf:
+                        members = [m for m in zf.namelist() if m.lower().endswith('.gpx')]
+                        if not members:
+                            yield json.dumps({'error': True, 'message': 'Aucun fichier GPX dans l\'archive ZIP'}) + '\n'
+                            return
+                        yield json.dumps({'message': f'{len(members)} fichier(s) GPX détecté(s) dans le ZIP', 'progress': 5}) + '\n'
+                        for i, m in enumerate(members, start=1):
+                            data = zf.read(m)
+                            codes = extract_gc_codes_from_gpx_bytes(data)
+                            gc_codes.extend(codes)
+                            # Progression fixe pendant l'extraction (5%), pas dépendante du nombre de fichiers
+                            yield json.dumps({'message': f'Lecture {m}: {len(codes)} code(s) GC', 'progress': 5}) + '\n'
+                else:
+                    codes = extract_gc_codes_from_gpx_bytes(_file_bytes)
+                    gc_codes.extend(codes)
+                    yield json.dumps({'message': f'{len(codes)} code(s) GC détecté(s)', 'progress': 5}) + '\n'
+
+                # Dédupliquer
+                gc_codes = list(dict.fromkeys(gc_codes))
+                total = len(gc_codes)
+                if total == 0:
+                    yield json.dumps({'error': True, 'message': 'Aucun code GC détecté dans le fichier'}) + '\n'
+                    return
+
+                yield json.dumps({'message': f'Import de {total} géocache(s)...', 'progress': 10}) + '\n'
+
+                success = 0
+                errors = 0
+                for idx, code in enumerate(gc_codes, start=1):
+                    try:
+                        importer.import_by_code(zone_id, code)
+                        success += 1
+                        msg = f'Importée: {code} ({idx}/{total})'
+                    except Exception as e:
+                        errors += 1
+                        msg = f'Erreur {code}: {e}'
+                    # Progression linéaire basée sur le nombre de geocaches traitées (10% à 100%)
+                    pct = 10 + int(idx / total * 90)
+                    yield json.dumps({'message': msg, 'progress': pct}) + '\n'
+
+                summary = f'Importation terminée: {success} succès'
+                if errors:
+                    summary += f', {errors} erreurs'
+                yield json.dumps({'progress': 100, 'message': summary, 'final_summary': True, 'stats': {'success': success, 'errors': errors, 'total': total}}) + '\n'
+            except Exception as e:
+                logger.error(f"Erreur import GPX: {e}", exc_info=True)
+                yield json.dumps({'error': True, 'message': f'Erreur: {str(e)}'}) + '\n'
+
+        return Response(stream_with_context(generate()), content_type='application/json')
+
+    except Exception as e:
+        logger.error(f"Erreur lors de l'import GPX: {e}")
+        return jsonify({'error': str(e)}), 500
