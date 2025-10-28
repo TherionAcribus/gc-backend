@@ -264,6 +264,115 @@ def move_geocache(geocache_id: int):
         return jsonify({'error': 'Failed to move geocache'}), 500
 
 
+@bp.post('/api/geocaches/<int:geocache_id>/copy')
+def copy_geocache(geocache_id: int):
+    """Copie une géocache vers une autre zone."""
+    try:
+        data = request.get_json(silent=True) or {}
+        target_zone_id = data.get('target_zone_id')
+        
+        if not target_zone_id:
+            return jsonify({'error': 'Missing required field: target_zone_id'}), 400
+        
+        # Récupérer la géocache source
+        source_geocache = Geocache.query.get(geocache_id)
+        if not source_geocache:
+            return jsonify({'error': 'Geocache not found'}), 404
+        
+        # Vérifier que la zone cible existe
+        from ..models import Zone
+        target_zone = Zone.query.get(target_zone_id)
+        if not target_zone:
+            return jsonify({'error': 'Target zone not found'}), 404
+        
+        # Vérifier si la géocache existe déjà dans la zone cible
+        existing = Geocache.query.filter_by(
+            gc_code=source_geocache.gc_code,
+            zone_id=target_zone_id
+        ).first()
+        
+        if existing:
+            return jsonify({
+                'error': f'La géocache {source_geocache.gc_code} existe déjà dans la zone cible'
+            }), 400
+        
+        from ..geocaches.models import GeocacheWaypoint, GeocacheChecker
+        
+        logger.info(f"Copying geocache {source_geocache.gc_code} from zone {source_geocache.zone_id} to zone {target_zone_id}")
+        
+        # Créer une nouvelle géocache avec les mêmes données
+        new_geocache = Geocache(
+            gc_code=source_geocache.gc_code,
+            name=source_geocache.name,
+            url=source_geocache.url,
+            type=source_geocache.type,
+            size=source_geocache.size,
+            owner=source_geocache.owner,
+            difficulty=source_geocache.difficulty,
+            terrain=source_geocache.terrain,
+            latitude=source_geocache.latitude,
+            longitude=source_geocache.longitude,
+            placed_at=source_geocache.placed_at,
+            status=source_geocache.status,
+            coordinates_raw=source_geocache.coordinates_raw,
+            is_corrected=source_geocache.is_corrected,
+            original_latitude=source_geocache.original_latitude,
+            original_longitude=source_geocache.original_longitude,
+            description_html=source_geocache.description_html,
+            hints=source_geocache.hints,
+            attributes=source_geocache.attributes,
+            favorites_count=source_geocache.favorites_count,
+            logs_count=source_geocache.logs_count,
+            images=source_geocache.images,
+            found=source_geocache.found,
+            found_date=source_geocache.found_date,
+            zone_id=target_zone_id
+        )
+        
+        db.session.add(new_geocache)
+        db.session.flush()  # Pour obtenir l'ID de la nouvelle géocache
+        
+        # Copier les waypoints
+        for waypoint in source_geocache.waypoints:
+            new_waypoint = GeocacheWaypoint(
+                geocache_id=new_geocache.id,
+                prefix=waypoint.prefix,
+                lookup=waypoint.lookup,
+                name=waypoint.name,
+                type=waypoint.type,
+                latitude=waypoint.latitude,
+                longitude=waypoint.longitude,
+                gc_coords=waypoint.gc_coords,
+                note=waypoint.note
+            )
+            db.session.add(new_waypoint)
+        
+        # Copier les checkers
+        for checker in source_geocache.checkers:
+            new_checker = GeocacheChecker(
+                geocache_id=new_geocache.id,
+                name=checker.name,
+                url=checker.url
+            )
+            db.session.add(new_checker)
+        
+        db.session.commit()
+        
+        logger.info(f"Successfully copied geocache {source_geocache.gc_code} to zone {target_zone_id}")
+        return jsonify({
+            'message': f'Geocache {source_geocache.gc_code} copied successfully',
+            'new_id': new_geocache.id,
+            'gc_code': new_geocache.gc_code,
+            'source_zone_id': source_geocache.zone_id,
+            'target_zone_id': target_zone_id,
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error copying geocache {geocache_id}: {e}", exc_info=True)
+        return jsonify({'error': 'Failed to copy geocache'}), 500
+
+
 @bp.post('/api/geocaches/import-gpx')
 def import_gpx():
     """Importe des géocaches depuis un fichier GPX (Pocket Query) ou ZIP.

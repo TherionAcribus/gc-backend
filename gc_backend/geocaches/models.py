@@ -9,7 +9,7 @@ class Geocache(db.Model):
     __tablename__ = 'geocache'
 
     id = db.Column(db.Integer, primary_key=True)
-    gc_code = db.Column(db.String(20), nullable=False, unique=True, index=True)
+    gc_code = db.Column(db.String(20), nullable=False, index=True)
     name = db.Column(db.String(255), nullable=False)
     url = db.Column(db.String(500))
     type = db.Column(db.String(100))
@@ -39,6 +39,10 @@ class Geocache(db.Model):
 
     zone_id = db.Column(db.Integer, db.ForeignKey('zone.id'), nullable=False)
     zone = db.relationship('Zone', backref=db.backref('geocaches', lazy=True))
+
+    __table_args__ = (
+        db.UniqueConstraint('gc_code', 'zone_id', name='unique_gc_code_zone'),
+    )
 
     waypoints = db.relationship('GeocacheWaypoint', back_populates='geocache', cascade='all, delete-orphan', lazy=True)
     checkers = db.relationship('GeocacheChecker', back_populates='geocache', cascade='all, delete-orphan', lazy=True)

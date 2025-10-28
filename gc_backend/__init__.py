@@ -1,6 +1,7 @@
 import logging
 from flask import Flask
 from flask_cors import CORS
+from flask_migrate import Migrate
 
 from .config import Config
 from .database import init_db
@@ -26,6 +27,10 @@ def create_app() -> Flask:
 
     # Init DB et données par défaut
     init_db(app)
+
+    # Init Flask-Migrate
+    from .database import db
+    migrate = Migrate(app, db)
 
     # Blueprints
     from .blueprints.zones import bp as zones_bp
