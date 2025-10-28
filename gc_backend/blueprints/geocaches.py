@@ -226,38 +226,61 @@ def move_geocache(geocache_id: int):
     try:
         data = request.get_json(silent=True) or {}
         target_zone_id = data.get('target_zone_id')
-        
+
         if not target_zone_id:
             return jsonify({'error': 'Missing required field: target_zone_id'}), 400
-        
+
         geocache = Geocache.query.get(geocache_id)
         if not geocache:
             return jsonify({'error': 'Geocache not found'}), 404
-        
+
         # Vérifier que la zone cible existe
         from ..models import Zone
         target_zone = Zone.query.get(target_zone_id)
         if not target_zone:
             return jsonify({'error': 'Target zone not found'}), 404
-        
+
         old_zone_id = geocache.zone_id
         gc_code = geocache.gc_code
-        
-        logger.info(f"Moving geocache {gc_code} from zone {old_zone_id} to zone {target_zone_id}")
-        
-        # Mettre à jour la zone
-        geocache.zone_id = target_zone_id
-        db.session.commit()
-        
-        logger.info(f"Successfully moved geocache {gc_code}")
-        return jsonify({
-            'message': f'Geocache {gc_code} moved successfully',
-            'id': geocache.id,
-            'gc_code': geocache.gc_code,
-            'old_zone_id': old_zone_id,
-            'new_zone_id': target_zone_id,
-        }), 200
-        
+
+        # Vérifier si la géocache existe déjà dans la zone cible
+        existing_geocache = Geocache.query.filter_by(
+            gc_code=gc_code,
+            zone_id=target_zone_id
+        ).first()
+
+        if existing_geocache:
+            # La géocache existe déjà dans la zone cible, on la supprime de la zone source
+            logger.info(f"Geocache {gc_code} already exists in target zone {target_zone_id}, removing from source zone {old_zone_id}")
+            db.session.delete(geocache)
+            db.session.commit()
+
+            return jsonify({
+                'message': f'Geocache {gc_code} removed from source zone (already exists in target zone)',
+                'id': geocache.id,
+                'gc_code': geocache.gc_code,
+                'old_zone_id': old_zone_id,
+                'new_zone_id': target_zone_id,
+                'already_exists': True,
+            }), 200
+        else:
+            # Déplacement normal
+            logger.info(f"Moving geocache {gc_code} from zone {old_zone_id} to zone {target_zone_id}")
+
+            # Mettre à jour la zone
+            geocache.zone_id = target_zone_id
+            db.session.commit()
+
+            logger.info(f"Successfully moved geocache {gc_code}")
+            return jsonify({
+                'message': f'Geocache {gc_code} moved successfully',
+                'id': geocache.id,
+                'gc_code': geocache.gc_code,
+                'old_zone_id': old_zone_id,
+                'new_zone_id': target_zone_id,
+                'already_exists': False,
+            }), 200
+
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error moving geocache {geocache_id}: {e}", exc_info=True)
