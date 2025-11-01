@@ -729,16 +729,22 @@ def set_corrected_coords_from_waypoint(geocache_id: int, waypoint_id: int):
         if not waypoint.latitude or not waypoint.longitude:
             return jsonify({'error': 'Waypoint has no coordinates'}), 400
         
+        if not waypoint.gc_coords:
+            return jsonify({'error': 'Waypoint has no gc_coords'}), 400
+        
         logger.info(f"[SET CORRECTED COORDS] Geocache {geocache_id} - Waypoint {waypoint_id}")
-        logger.info(f"[SET CORRECTED COORDS] Anciennes coords: lat={geocache.latitude}, lon={geocache.longitude}")
-        logger.info(f"[SET CORRECTED COORDS] Nouvelles coords: lat={waypoint.latitude}, lon={waypoint.longitude}")
+        logger.info(f"[SET CORRECTED COORDS] Anciennes coords: {geocache.coordinates_raw} (lat={geocache.latitude}, lon={geocache.longitude})")
+        logger.info(f"[SET CORRECTED COORDS] Nouvelles coords: {waypoint.gc_coords} (lat={waypoint.latitude}, lon={waypoint.longitude})")
         
         # Sauvegarder les coordonnées originales si ce n'est pas déjà fait
         if not geocache.is_corrected:
             geocache.original_latitude = geocache.latitude
             geocache.original_longitude = geocache.longitude
+            geocache.original_coordinates_raw = geocache.coordinates_raw
+            logger.info(f"[SET CORRECTED COORDS] Sauvegarde des coordonnées originales: {geocache.original_coordinates_raw}")
         
-        # Mettre à jour avec les coordonnées du waypoint
+        # Mettre à jour avec les coordonnées du waypoint (format raw + décimales)
+        geocache.coordinates_raw = waypoint.gc_coords
         geocache.latitude = waypoint.latitude
         geocache.longitude = waypoint.longitude
         geocache.is_corrected = True
