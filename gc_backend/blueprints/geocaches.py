@@ -526,3 +526,105 @@ def import_gpx():
     except Exception as e:
         logger.error(f"Erreur lors de l'import GPX: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# ENDPOINTS CRUD POUR LES WAYPOINTS
+# ============================================================================
+
+@bp.post('/api/geocaches/<int:geocache_id>/waypoints')
+def create_waypoint(geocache_id: int):
+    """Crée un nouveau waypoint pour une géocache."""
+    try:
+        from ..geocaches.models import GeocacheWaypoint
+        
+        geocache = Geocache.query.get(geocache_id)
+        if not geocache:
+            return jsonify({'error': 'Geocache not found'}), 404
+        
+        data = request.get_json()
+        
+        waypoint = GeocacheWaypoint(
+            geocache_id=geocache_id,
+            prefix=data.get('prefix'),
+            lookup=data.get('lookup'),
+            name=data.get('name'),
+            type=data.get('type'),
+            latitude=data.get('latitude'),
+            longitude=data.get('longitude'),
+            gc_coords=data.get('gc_coords'),
+            note=data.get('note')
+        )
+        
+        db.session.add(waypoint)
+        db.session.commit()
+        
+        logger.info(f"Created waypoint {waypoint.id} for geocache {geocache_id}")
+        return jsonify(waypoint.to_dict()), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error creating waypoint: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.put('/api/geocaches/<int:geocache_id>/waypoints/<int:waypoint_id>')
+def update_waypoint(geocache_id: int, waypoint_id: int):
+    """Met à jour un waypoint existant."""
+    try:
+        from ..geocaches.models import GeocacheWaypoint
+        
+        waypoint = GeocacheWaypoint.query.filter_by(
+            id=waypoint_id,
+            geocache_id=geocache_id
+        ).first()
+        
+        if not waypoint:
+            return jsonify({'error': 'Waypoint not found'}), 404
+        
+        data = request.get_json()
+        
+        waypoint.prefix = data.get('prefix', waypoint.prefix)
+        waypoint.lookup = data.get('lookup', waypoint.lookup)
+        waypoint.name = data.get('name', waypoint.name)
+        waypoint.type = data.get('type', waypoint.type)
+        waypoint.latitude = data.get('latitude', waypoint.latitude)
+        waypoint.longitude = data.get('longitude', waypoint.longitude)
+        waypoint.gc_coords = data.get('gc_coords', waypoint.gc_coords)
+        waypoint.note = data.get('note', waypoint.note)
+        
+        db.session.commit()
+        
+        logger.info(f"Updated waypoint {waypoint_id} for geocache {geocache_id}")
+        return jsonify(waypoint.to_dict())
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error updating waypoint: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.delete('/api/geocaches/<int:geocache_id>/waypoints/<int:waypoint_id>')
+def delete_waypoint(geocache_id: int, waypoint_id: int):
+    """Supprime un waypoint."""
+    try:
+        from ..geocaches.models import GeocacheWaypoint
+        
+        waypoint = GeocacheWaypoint.query.filter_by(
+            id=waypoint_id,
+            geocache_id=geocache_id
+        ).first()
+        
+        if not waypoint:
+            return jsonify({'error': 'Waypoint not found'}), 404
+        
+        db.session.delete(waypoint)
+        db.session.commit()
+        
+        logger.info(f"Deleted waypoint {waypoint_id} for geocache {geocache_id}")
+        return jsonify({'success': True}), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error deleting waypoint: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
