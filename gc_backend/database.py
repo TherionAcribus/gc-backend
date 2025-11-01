@@ -41,6 +41,7 @@ def init_db(app):
                 'images': 'JSON',
                 'found': 'BOOLEAN',
                 'found_date': 'DATETIME',
+                'solved': 'VARCHAR(20)',
             }
 
             for col, col_type in to_add.items():

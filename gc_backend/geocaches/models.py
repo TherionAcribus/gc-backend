@@ -37,6 +37,7 @@ class Geocache(db.Model):
     images = db.Column(db.JSON)  # liste d'objets {url: str}
     found = db.Column(db.Boolean)
     found_date = db.Column(db.DateTime)
+    solved = db.Column(db.String(20), default='not_solved')  # not_solved, in_progress, solved
 
     zone_id = db.Column(db.Integer, db.ForeignKey('zone.id'), nullable=False)
     zone = db.relationship('Zone', backref=db.backref('geocaches', lazy=True))
@@ -85,6 +86,7 @@ class Geocache(db.Model):
             'images': self.images,
             'found': self.found,
             'found_date': self.found_date.isoformat() if self.found_date else None,
+            'solved': self.solved,
             'waypoints': [w.to_dict() for w in (self.waypoints or [])],
             'checkers': [c.to_dict() for c in (self.checkers or [])],
         }

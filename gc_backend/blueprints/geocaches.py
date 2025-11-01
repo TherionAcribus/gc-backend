@@ -32,7 +32,7 @@ def get_geocaches_for_zone(zone_id: int):
                 'difficulty': gc.difficulty,
                 'terrain': gc.terrain,
                 'size': gc.size,
-                'solved': 'not_solved',  # TODO: ajouter ce champ au modèle
+                'solved': gc.solved or 'not_solved',
                 'found': gc.found or False,
                 'favorites_count': gc.favorites_count or 0,
                 'hidden_date': gc.placed_at.isoformat() if gc.placed_at else None,
@@ -781,4 +781,124 @@ def delete_waypoint(geocache_id: int, waypoint_id: int):
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error deleting waypoint: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.put('/api/geocaches/<int:geocache_id>/coordinates')
+def update_coordinates(geocache_id: int):
+    """
+    Met à jour les coordonnées d'une géocache.
+    Permet de corriger les coordonnées en conservant les originales.
+    """
+    try:
+        data = request.get_json()
+        coordinates_raw = data.get('coordinates_raw')
+        
+        if not coordinates_raw:
+            return jsonify({'error': 'coordinates_raw required'}), 400
+        
+        geocache = Geocache.query.get(geocache_id)
+        if not geocache:
+            return jsonify({'error': 'Geocache not found'}), 404
+        
+        # Parse les coordonnées pour calculer lat/lon
+        from ..geocaches.scraper import GeocachingScraper
+        
+        def parse_gc_coordinates(coords_text: str):
+            try:
+                parts = coords_text.split()
+                if len(parts) < 6:
+                    return None, None
+                lat_dir = parts[0].upper()
+                lat_deg = float(parts[1].replace('°', ''))
+                lat_min = float(parts[2])
+                lat = lat_deg + (lat_min / 60.0)
+                if lat_dir == 'S':
+                    lat = -lat
+                lon_dir = parts[3].upper()
+                lon_deg = float(parts[4].replace('°', ''))
+                lon_min = float(parts[5])
+                lon = lon_deg + (lon_min / 60.0)
+                if lon_dir == 'W':
+                    lon = -lon
+                return lat, lon
+            except Exception:
+                return None, None
+        
+        lat, lon = parse_gc_coordinates(coordinates_raw)
+        if lat is None or lon is None:
+            return jsonify({'error': 'Invalid coordinates format'}), 400
+        
+        # Mettre à jour les coordonnées
+        geocache.coordinates_raw = coordinates_raw
+        geocache.latitude = lat
+        geocache.longitude = lon
+        geocache.is_corrected = True
+        
+        db.session.commit()
+        
+        logger.info(f"Updated coordinates for geocache {geocache_id}")
+        return jsonify({'success': True, 'geocache': geocache.to_dict()})
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error updating coordinates: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.post('/api/geocaches/<int:geocache_id>/reset-coordinates')
+def reset_coordinates(geocache_id: int):
+    """
+    Réinitialise les coordonnées aux valeurs originales.
+    """
+    try:
+        geocache = Geocache.query.get(geocache_id)
+        if not geocache:
+            return jsonify({'error': 'Geocache not found'}), 404
+        
+        # Restaurer les coordonnées originales
+        if geocache.original_coordinates_raw:
+            geocache.coordinates_raw = geocache.original_coordinates_raw
+        if geocache.original_latitude is not None:
+            geocache.latitude = geocache.original_latitude
+        if geocache.original_longitude is not None:
+            geocache.longitude = geocache.original_longitude
+        geocache.is_corrected = False
+        
+        db.session.commit()
+        
+        logger.info(f"Reset coordinates for geocache {geocache_id}")
+        return jsonify({'success': True, 'geocache': geocache.to_dict()})
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error resetting coordinates: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.put('/api/geocaches/<int:geocache_id>/solved-status')
+def update_solved_status(geocache_id: int):
+    """
+    Met à jour le statut de résolution d'une géocache.
+    """
+    try:
+        data = request.get_json()
+        solved_status = data.get('solved_status')
+        
+        if solved_status not in ['not_solved', 'in_progress', 'solved']:
+            return jsonify({'error': 'Invalid solved_status'}), 400
+        
+        geocache = Geocache.query.get(geocache_id)
+        if not geocache:
+            return jsonify({'error': 'Geocache not found'}), 404
+        
+        geocache.solved = solved_status
+        db.session.commit()
+        
+        logger.info(f"Updated solved status for geocache {geocache_id} to {solved_status}")
+        return jsonify({'success': True, 'solved': solved_status})
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error updating solved status: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
