@@ -544,22 +544,74 @@ def create_waypoint(geocache_id: int):
         
         data = request.get_json()
         
+        # 🔍 LOG DÉTAILLÉ : Données reçues
+        logger.info(f"[CREATE WAYPOINT] Geocache {geocache_id}")
+        logger.info(f"[CREATE WAYPOINT] Données reçues: {data}")
+        logger.info(f"[CREATE WAYPOINT] gc_coords reçu: {data.get('gc_coords')}")
+        
+        # ✅ PARSER les coordonnées GC pour calculer lat/lon
+        latitude = None
+        longitude = None
+        gc_coords = data.get('gc_coords')
+        
+        if gc_coords:
+            import re
+            # Gérer avec ou sans virgule : "N 48° 38.204, E 006° 07.000" OU "N 48° 38.204 E 006° 07.000"
+            parts = gc_coords.split(',') if ',' in gc_coords else None
+            if not parts or len(parts) != 2:
+                # Pas de virgule, séparer par regex
+                match = re.match(r'^([NS][^EW]+)\s+([EW].+)$', gc_coords)
+                if match:
+                    parts = [match.group(1), match.group(2)]
+            
+            if parts and len(parts) == 2:
+                lat_str = parts[0].strip()
+                lon_str = parts[1].strip()
+                
+                # Parser latitude
+                lat_match = re.match(r'([NS])\s*(\d+)°\s*([\d.]+)', lat_str)
+                lon_match = re.match(r'([EW])\s*(\d+)°\s*([\d.]+)', lon_str)
+                
+                if lat_match and lon_match:
+                    lat = (int(lat_match.group(2)) + float(lat_match.group(3)) / 60)
+                    if lat_match.group(1) == 'S':
+                        lat = -lat
+                    
+                    lon = (int(lon_match.group(2)) + float(lon_match.group(3)) / 60)
+                    if lon_match.group(1) == 'W':
+                        lon = -lon
+                    
+                    latitude = lat
+                    longitude = lon
+                    logger.info(f"[CREATE WAYPOINT] ✅ Coordonnées parsées: {gc_coords} → lat={latitude}, lon={longitude}")
+                else:
+                    logger.warning(f"[CREATE WAYPOINT] ⚠️ Impossible de parser: {gc_coords}")
+        
         waypoint = GeocacheWaypoint(
             geocache_id=geocache_id,
             prefix=data.get('prefix'),
             lookup=data.get('lookup'),
             name=data.get('name'),
             type=data.get('type'),
-            latitude=data.get('latitude'),
-            longitude=data.get('longitude'),
-            gc_coords=data.get('gc_coords'),
+            latitude=latitude,  # ✅ Coordonnées parsées par le backend
+            longitude=longitude,  # ✅ Coordonnées parsées par le backend
+            gc_coords=gc_coords,
             note=data.get('note')
         )
+        
+        # 🔍 LOG DÉTAILLÉ : Avant commit
+        logger.info(f"[CREATE WAYPOINT] Avant commit - waypoint.gc_coords: {waypoint.gc_coords}")
+        logger.info(f"[CREATE WAYPOINT] Avant commit - waypoint.latitude: {waypoint.latitude}")
+        logger.info(f"[CREATE WAYPOINT] Avant commit - waypoint.longitude: {waypoint.longitude}")
         
         db.session.add(waypoint)
         db.session.commit()
         
-        logger.info(f"Created waypoint {waypoint.id} for geocache {geocache_id}")
+        # 🔍 LOG DÉTAILLÉ : Après commit
+        logger.info(f"[CREATE WAYPOINT] Après commit - ID: {waypoint.id}")
+        logger.info(f"[CREATE WAYPOINT] Après commit - waypoint.gc_coords: {waypoint.gc_coords}")
+        logger.info(f"[CREATE WAYPOINT] Après commit - waypoint.latitude: {waypoint.latitude}")
+        logger.info(f"[CREATE WAYPOINT] Après commit - waypoint.longitude: {waypoint.longitude}")
         return jsonify(waypoint.to_dict()), 201
         
     except Exception as e:
@@ -584,18 +636,68 @@ def update_waypoint(geocache_id: int, waypoint_id: int):
         
         data = request.get_json()
         
+        # 🔍 LOG DÉTAILLÉ : Données reçues
+        logger.info(f"[UPDATE WAYPOINT] Waypoint {waypoint_id} - Geocache {geocache_id}")
+        logger.info(f"[UPDATE WAYPOINT] Données reçues: {data}")
+        logger.info(f"[UPDATE WAYPOINT] gc_coords reçu: {data.get('gc_coords')}")
+        
+        # 🔍 LOG DÉTAILLÉ : Avant modification
+        logger.info(f"[UPDATE WAYPOINT] Avant - waypoint.gc_coords: {waypoint.gc_coords}")
+        logger.info(f"[UPDATE WAYPOINT] Avant - waypoint.latitude: {waypoint.latitude}")
+        logger.info(f"[UPDATE WAYPOINT] Avant - waypoint.longitude: {waypoint.longitude}")
+        
         waypoint.prefix = data.get('prefix', waypoint.prefix)
         waypoint.lookup = data.get('lookup', waypoint.lookup)
         waypoint.name = data.get('name', waypoint.name)
         waypoint.type = data.get('type', waypoint.type)
-        waypoint.latitude = data.get('latitude', waypoint.latitude)
-        waypoint.longitude = data.get('longitude', waypoint.longitude)
-        waypoint.gc_coords = data.get('gc_coords', waypoint.gc_coords)
         waypoint.note = data.get('note', waypoint.note)
+        
+        # ✅ Si gc_coords a changé, recalculer lat/lon
+        new_gc_coords = data.get('gc_coords')
+        if new_gc_coords and new_gc_coords != waypoint.gc_coords:
+            import re
+            # Gérer avec ou sans virgule
+            parts = new_gc_coords.split(',') if ',' in new_gc_coords else None
+            if not parts or len(parts) != 2:
+                match = re.match(r'^([NS][^EW]+)\s+([EW].+)$', new_gc_coords)
+                if match:
+                    parts = [match.group(1), match.group(2)]
+            
+            if parts and len(parts) == 2:
+                lat_str = parts[0].strip()
+                lon_str = parts[1].strip()
+                
+                lat_match = re.match(r'([NS])\s*(\d+)°\s*([\d.]+)', lat_str)
+                lon_match = re.match(r'([EW])\s*(\d+)°\s*([\d.]+)', lon_str)
+                
+                if lat_match and lon_match:
+                    lat = (int(lat_match.group(2)) + float(lat_match.group(3)) / 60)
+                    if lat_match.group(1) == 'S':
+                        lat = -lat
+                    
+                    lon = (int(lon_match.group(2)) + float(lon_match.group(3)) / 60)
+                    if lon_match.group(1) == 'W':
+                        lon = -lon
+                    
+                    waypoint.latitude = lat
+                    waypoint.longitude = lon
+                    logger.info(f"[UPDATE WAYPOINT] ✅ Coordonnées parsées: {new_gc_coords} → lat={lat}, lon={lon}")
+                else:
+                    logger.warning(f"[UPDATE WAYPOINT] ⚠️ Impossible de parser: {new_gc_coords}")
+            
+            waypoint.gc_coords = new_gc_coords
+        
+        # 🔍 LOG DÉTAILLÉ : Après modification, avant commit
+        logger.info(f"[UPDATE WAYPOINT] Après modif - waypoint.gc_coords: {waypoint.gc_coords}")
+        logger.info(f"[UPDATE WAYPOINT] Après modif - waypoint.latitude: {waypoint.latitude}")
+        logger.info(f"[UPDATE WAYPOINT] Après modif - waypoint.longitude: {waypoint.longitude}")
         
         db.session.commit()
         
-        logger.info(f"Updated waypoint {waypoint_id} for geocache {geocache_id}")
+        # 🔍 LOG DÉTAILLÉ : Après commit
+        logger.info(f"[UPDATE WAYPOINT] Après commit - waypoint.gc_coords: {waypoint.gc_coords}")
+        logger.info(f"[UPDATE WAYPOINT] Après commit - waypoint.latitude: {waypoint.latitude}")
+        logger.info(f"[UPDATE WAYPOINT] Après commit - waypoint.longitude: {waypoint.longitude}")
         return jsonify(waypoint.to_dict())
         
     except Exception as e:
