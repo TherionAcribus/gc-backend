@@ -24,10 +24,11 @@ class Geocache(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Données enrichies (scraping)
-    coordinates_raw = db.Column(db.String(100))
+    coordinates_raw = db.Column(db.String(100))  # Coordonnées affichées au format Geocaching (peuvent être corrigées)
     is_corrected = db.Column(db.Boolean)
-    original_latitude = db.Column(db.Float)
-    original_longitude = db.Column(db.Float)
+    original_latitude = db.Column(db.Float)  # Coordonnées originales en décimal (pour la carte)
+    original_longitude = db.Column(db.Float)  # Coordonnées originales en décimal (pour la carte)
+    original_coordinates_raw = db.Column(db.String(100))  # Coordonnées originales au format Geocaching (format utilisé par les joueurs)
     description_html = db.Column(db.Text)
     hints = db.Column(db.Text)
     attributes = db.Column(db.JSON)
@@ -75,6 +76,7 @@ class Geocache(db.Model):
             'is_corrected': self.is_corrected,
             'original_latitude': self.original_latitude,
             'original_longitude': self.original_longitude,
+            'original_coordinates_raw': self.original_coordinates_raw,
             'description_html': self.description_html,
             'hints': self.hints,
             'attributes': self.attributes,

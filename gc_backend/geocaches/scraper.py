@@ -30,10 +30,11 @@ class ScrapedGeocache:
     placed_at: Optional[datetime]
     status: str | None
     # Enrichissements
-    coordinates_raw: str | None = None
+    coordinates_raw: str | None = None  # Coordonnées affichées au format Geocaching (peuvent être corrigées)
     is_corrected: bool | None = None
-    original_latitude: float | None = None
-    original_longitude: float | None = None
+    original_latitude: float | None = None  # Coordonnées originales en décimal (pour la carte)
+    original_longitude: float | None = None  # Coordonnées originales en décimal (pour la carte)
+    original_coordinates_raw: str | None = None  # Coordonnées originales au format Geocaching (format utilisé par les joueurs)
     description_html: str | None = None
     hints: str | None = None
     attributes: list[dict] | None = None
@@ -325,15 +326,41 @@ class GeocachingScraper:
                 return lat, lon
             except Exception:
                 return None, None
+        
+        def decimal_to_gc_coordinates(lat: float, lon: float) -> str:
+            """
+            Convertit des coordonnées décimales en format Geocaching.
+            Exemple: (48.856667, 2.350833) -> "N 48° 51.400 E 002° 21.050"
+            """
+            try:
+                # Latitude
+                lat_dir = 'N' if lat >= 0 else 'S'
+                lat_abs = abs(lat)
+                lat_deg = int(lat_abs)
+                lat_min = (lat_abs - lat_deg) * 60.0
+                
+                # Longitude
+                lon_dir = 'E' if lon >= 0 else 'W'
+                lon_abs = abs(lon)
+                lon_deg = int(lon_abs)
+                lon_min = (lon_abs - lon_deg) * 60.0
+                
+                # Format: N 48° 51.400 E 002° 21.050
+                return f"{lat_dir} {lat_deg}° {lat_min:.3f} {lon_dir} {lon_deg:03d}° {lon_min:.3f}"
+            except Exception:
+                return None
 
         # Extraction coordonnées (ancien format précis)
         logger.debug(f"[{code}] Extracting coordinates...")
         coordinates_raw = None
         is_corrected: Optional[bool] = None
-        original_latitude: Optional[float] = None
-        original_longitude: Optional[float] = None
         latitude = None
         longitude = None
+        # Les coordonnées originales seront initialisées avec les coordonnées affichées
+        # puis remplacées si des coordonnées corrigées sont détectées
+        original_latitude: Optional[float] = None
+        original_longitude: Optional[float] = None
+        original_coordinates_raw: Optional[str] = None
 
         coords_span = soup.find('span', {'id': 'uxLatLon'})
         logger.debug(f"[{code}] uxLatLon span found: {coords_span is not None}")
@@ -361,6 +388,14 @@ class GeocachingScraper:
         else:
             logger.warning(f"[{code}] uxLatLon span NOT found - coordinates may require authentication!")
 
+        # Initialiser les coordonnées originales avec les coordonnées affichées
+        # Elles seront remplacées si des coordonnées corrigées sont détectées
+        original_coordinates_raw = coordinates_raw
+        if latitude is not None and longitude is not None:
+            original_latitude = latitude
+            original_longitude = longitude
+            logger.debug(f"[{code}] Initialized original coordinates with displayed coordinates")
+
         # Détection via script userDefinedCoords (si présent)
         try:
             m = re.search(r'userDefinedCoords\s*=\s*\{[\s\S]*?\};', resp.text)
@@ -381,6 +416,9 @@ class GeocachingScraper:
                     try:
                         original_latitude = float(old_m.group(1))
                         original_longitude = float(old_m.group(2))
+                        # Convertir les coordonnées originales décimales en format Geocaching
+                        original_coordinates_raw = decimal_to_gc_coordinates(original_latitude, original_longitude)
+                        logger.debug(f"[{code}] Original coordinates in GC format: '{original_coordinates_raw}'")
                     except Exception:
                         pass
         except Exception:
@@ -621,6 +659,7 @@ class GeocachingScraper:
             is_corrected=is_corrected,
             original_latitude=original_latitude,
             original_longitude=original_longitude,
+            original_coordinates_raw=original_coordinates_raw,
             description_html=description_html,
             hints=hints,
             attributes=attributes or None,

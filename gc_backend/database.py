@@ -32,6 +32,7 @@ def init_db(app):
                 'is_corrected': 'BOOLEAN',
                 'original_latitude': 'REAL',
                 'original_longitude': 'REAL',
+                'original_coordinates_raw': 'TEXT',
                 'description_html': 'TEXT',
                 'hints': 'TEXT',
                 'attributes': 'JSON',

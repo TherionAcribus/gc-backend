@@ -80,6 +80,7 @@ class GeocacheImporter:
         g.is_corrected = getattr(s, 'is_corrected', None)
         g.original_latitude = getattr(s, 'original_latitude', None)
         g.original_longitude = getattr(s, 'original_longitude', None)
+        g.original_coordinates_raw = getattr(s, 'original_coordinates_raw', None)
         g.description_html = getattr(s, 'description_html', None)
         g.hints = getattr(s, 'hints', None)
         g.attributes = getattr(s, 'attributes', None)

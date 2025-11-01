@@ -177,6 +177,7 @@ def refresh_geocache(geocache_id: int):
         geocache.is_corrected = getattr(s, 'is_corrected', None)
         geocache.original_latitude = getattr(s, 'original_latitude', None)
         geocache.original_longitude = getattr(s, 'original_longitude', None)
+        geocache.original_coordinates_raw = getattr(s, 'original_coordinates_raw', None)
         geocache.description_html = getattr(s, 'description_html', None)
         geocache.hints = getattr(s, 'hints', None)
         geocache.attributes = getattr(s, 'attributes', None)
@@ -347,6 +348,7 @@ def copy_geocache(geocache_id: int):
             is_corrected=source_geocache.is_corrected,
             original_latitude=source_geocache.original_latitude,
             original_longitude=source_geocache.original_longitude,
+            original_coordinates_raw=source_geocache.original_coordinates_raw,
             description_html=source_geocache.description_html,
             hints=source_geocache.hints,
             attributes=source_geocache.attributes,
@@ -702,7 +704,57 @@ def update_waypoint(geocache_id: int, waypoint_id: int):
         
     except Exception as e:
         db.session.rollback()
-        logger.error(f"Error updating waypoint: {e}", exc_info=True)
+        logger.error(f"Erreur lors de la mise à jour du waypoint: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.post('/api/geocaches/<int:geocache_id>/set-corrected-coords/<int:waypoint_id>')
+def set_corrected_coords_from_waypoint(geocache_id: int, waypoint_id: int):
+    """Définit les coordonnées d'un waypoint comme coordonnées corrigées de la géocache."""
+    try:
+        from ..geocaches.models import Geocache, GeocacheWaypoint
+        
+        geocache = Geocache.query.get(geocache_id)
+        if not geocache:
+            return jsonify({'error': 'Geocache not found'}), 404
+        
+        waypoint = GeocacheWaypoint.query.filter_by(
+            id=waypoint_id,
+            geocache_id=geocache_id
+        ).first()
+        
+        if not waypoint:
+            return jsonify({'error': 'Waypoint not found'}), 404
+        
+        if not waypoint.latitude or not waypoint.longitude:
+            return jsonify({'error': 'Waypoint has no coordinates'}), 400
+        
+        logger.info(f"[SET CORRECTED COORDS] Geocache {geocache_id} - Waypoint {waypoint_id}")
+        logger.info(f"[SET CORRECTED COORDS] Anciennes coords: lat={geocache.latitude}, lon={geocache.longitude}")
+        logger.info(f"[SET CORRECTED COORDS] Nouvelles coords: lat={waypoint.latitude}, lon={waypoint.longitude}")
+        
+        # Sauvegarder les coordonnées originales si ce n'est pas déjà fait
+        if not geocache.is_corrected:
+            geocache.original_latitude = geocache.latitude
+            geocache.original_longitude = geocache.longitude
+        
+        # Mettre à jour avec les coordonnées du waypoint
+        geocache.latitude = waypoint.latitude
+        geocache.longitude = waypoint.longitude
+        geocache.is_corrected = True
+        
+        db.session.commit()
+        
+        logger.info(f"[SET CORRECTED COORDS] Coordonnées corrigées mises à jour")
+        
+        return jsonify({
+            'success': True,
+            'geocache': geocache.to_dict()
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Erreur lors de la mise à jour des coordonnées corrigées: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 
