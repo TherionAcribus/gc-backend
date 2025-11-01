@@ -36,6 +36,12 @@ def get_geocaches_for_zone(zone_id: int):
                 'found': gc.found or False,
                 'favorites_count': gc.favorites_count or 0,
                 'hidden_date': gc.placed_at.isoformat() if gc.placed_at else None,
+                'latitude': gc.latitude,
+                'longitude': gc.longitude,
+                'is_corrected': gc.is_corrected or False,
+                'original_latitude': gc.original_latitude,
+                'original_longitude': gc.original_longitude,
+                'waypoints': [w.to_dict() for w in (gc.waypoints or [])],
             })
         
         logger.info(f"Returning {len(result)} geocaches for zone {zone_id}")
