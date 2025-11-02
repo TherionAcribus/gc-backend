@@ -1,0 +1,233 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mysterai.app/schemas/plugin.json",
+  "title": "MysterAI Plugin Configuration",
+  "description": "Schema de validation pour les fichiers plugin.json des plugins MysterAI",
+  "type": "object",
+  "required": [
+    "name",
+    "version",
+    "plugin_api_version",
+    "plugin_type",
+    "entry_point"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$",
+      "minLength": 2,
+      "maxLength": 64,
+      "description": "Nom unique du plugin (snake_case, lettres minuscules, chiffres et underscores uniquement)"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9.]+)?$",
+      "description": "Version sémantique du plugin (ex: 1.0.0, 1.2.3-beta)"
+    },
+    "plugin_api_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$",
+      "description": "Version de l'API du plugin (ex: 2.0)"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Description courte du plugin"
+    },
+    "author": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "Auteur du plugin"
+    },
+    "plugin_type": {
+      "type": "string",
+      "enum": ["python", "rust", "binary", "wasm", "node"],
+      "description": "Type de plugin déterminant le wrapper d'exécution"
+    },
+    "entry_point": {
+      "type": "string",
+      "description": "Point d'entrée du plugin (ex: main.py, plugin.wasm, plugin.exe)"
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Liste des dépendances requises"
+    },
+    "categories": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "description": "Catégories du plugin (ex: Substitution, Transposition, Coordinates)"
+    },
+    "kinds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["code", "calculator", "image", "geo", "text", "solver"]
+      },
+      "description": "Types de fonctionnalités offertes"
+    },
+    "brute_force": {
+      "type": "boolean",
+      "default": false,
+      "description": "Indique si le plugin supporte le mode bruteforce"
+    },
+    "enable_scoring": {
+      "type": "boolean",
+      "default": true,
+      "description": "Indique si le scoring automatique est activé pour ce plugin"
+    },
+    "accept_accents": {
+      "type": "boolean",
+      "default": false,
+      "description": "Indique si le plugin accepte les caractères accentués"
+    },
+    "heavy_cpu": {
+      "type": "boolean",
+      "default": false,
+      "description": "Indique si le plugin est CPU intensif (nécessite ProcessPool)"
+    },
+    "needs_network": {
+      "type": "boolean",
+      "default": false,
+      "description": "Indique si le plugin nécessite un accès réseau"
+    },
+    "needs_filesystem": {
+      "type": "boolean",
+      "default": false,
+      "description": "Indique si le plugin nécessite un accès au système de fichiers"
+    },
+    "timeout_seconds": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 300,
+      "default": 30,
+      "description": "Timeout d'exécution en secondes"
+    },
+    "capabilities": {
+      "type": "object",
+      "properties": {
+        "analyze": {
+          "type": "boolean",
+          "description": "Capacité d'analyser/détecter du code"
+        },
+        "decode": {
+          "type": "boolean",
+          "description": "Capacité de décoder du texte"
+        },
+        "encode": {
+          "type": "boolean",
+          "description": "Capacité d'encoder du texte"
+        }
+      },
+      "description": "Capacités du plugin"
+    },
+    "defaults": {
+      "type": "object",
+      "properties": {
+        "include_in_analysis": {
+          "type": "boolean",
+          "default": true
+        },
+        "include_in_decode": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "description": "Comportements par défaut"
+    },
+    "scoring_method": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["lexical", "gps", "custom"]
+        },
+        "custom_weights": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      },
+      "description": "Méthode de scoring personnalisée (obsolète, géré centralement)"
+    },
+    "input_types": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-z_]+$": {
+          "type": "object",
+          "required": ["type", "label"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["string", "number", "float", "select", "checkbox", "boolean", "textarea"]
+            },
+            "label": {
+              "type": "string",
+              "description": "Libellé affiché dans l'interface"
+            },
+            "placeholder": {
+              "type": "string",
+              "description": "Texte d'aide dans le champ"
+            },
+            "default": {
+              "description": "Valeur par défaut"
+            },
+            "description": {
+              "type": "string",
+              "description": "Description du champ"
+            },
+            "options": {
+              "type": "array",
+              "description": "Options pour les champs select",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "required": ["value", "label"],
+                    "properties": {
+                      "value": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "min": {
+              "type": "number",
+              "description": "Valeur minimale pour les champs numériques"
+            },
+            "max": {
+              "type": "number",
+              "description": "Valeur maximale pour les champs numériques"
+            },
+            "step": {
+              "type": "number",
+              "description": "Pas pour les champs numériques"
+            }
+          }
+        }
+      },
+      "description": "Définition des champs de saisie du formulaire"
+    },
+    "output_types": {
+      "type": "object",
+      "description": "Définition des types de sortie (legacy, optionnel)"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,57 @@
+{
+  "name": "caesar",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Plugin de chiffrement et déchiffrement Caesar (ROT-N). Décale chaque lettre de N positions dans l'alphabet.",
+  "author": "MysterAI Team",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Substitution", "Caesar"],
+  "kinds": ["code"],
+  "brute_force": true,
+  "enable_scoring": true,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": true,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": true,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Texte à traiter",
+      "placeholder": "Entrez le texte à chiffrer ou déchiffrer..."
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["encode", "decode", "detect"],
+      "default": "decode"
+    },
+    "shift": {
+      "type": "number",
+      "label": "Décalage (ROT-N)",
+      "placeholder": "13",
+      "default": 13,
+      "min": 1,
+      "max": 25,
+      "step": 1,
+      "description": "Nombre de positions de décalage dans l'alphabet (1-25)"
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Texte transformé"
+    }
+  }
+}
