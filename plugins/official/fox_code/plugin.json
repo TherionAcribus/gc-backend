@@ -1,0 +1,58 @@
+{
+  "name": "fox_code",
+  "version": "1.1.0",
+  "plugin_api_version": "2.0",
+  "description": "Encodage et décodage du Fox Code. Utilise une grille 3×9 pour convertir les lettres en chiffres (variantes courte et longue).",
+  "author": "MysterAI Team",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Substitution", "Numbers", "Grid"],
+  "kinds": ["code"],
+  "brute_force": true,
+  "enable_scoring": true,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": true,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": true,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Texte à traiter",
+      "placeholder": "Entrez le texte ou la séquence de chiffres..."
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["encode", "decode"],
+      "default": "decode"
+    },
+    "variant": {
+      "type": "select",
+      "label": "Variante",
+      "options": [
+        {"value": "auto", "label": "Auto (détection automatique)"},
+        {"value": "short", "label": "Courte (colonnes seulement)"},
+        {"value": "long", "label": "Longue (ligne + colonne)"}
+      ],
+      "default": "auto",
+      "description": "Variante courte: 1 chiffre par lettre. Variante longue: 2 chiffres (ligne+colonne)"
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Résultat"
+    }
+  }
+}

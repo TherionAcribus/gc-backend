@@ -1,0 +1,77 @@
+{
+  "name": "bacon_code",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Plugin de chiffrement et déchiffrement utilisant le chiffre Bacon (bilitère). Chaque lettre est remplacée par une séquence de 5 symboles A/B.",
+  "author": "MysterAI Team",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Substitution", "Bacon", "Binary"],
+  "kinds": ["code"],
+  "brute_force": true,
+  "enable_scoring": true,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": true,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": true,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Texte à traiter",
+      "placeholder": "Entrez le texte à chiffrer ou déchiffrer..."
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["encode", "decode", "detect"],
+      "default": "decode"
+    },
+    "variant": {
+      "type": "select",
+      "label": "Alphabet",
+      "options": [
+        {"value": "26", "label": "26 lettres (I≠J, U≠V)"},
+        {"value": "24", "label": "24 lettres (I=J, U=V)"}
+      ],
+      "default": "26",
+      "description": "Variante de l'alphabet Bacon"
+    },
+    "symbol_a": {
+      "type": "string",
+      "label": "Symbole pour A",
+      "placeholder": "A",
+      "default": "A",
+      "description": "Symbole représentant 'A' dans le code"
+    },
+    "symbol_b": {
+      "type": "string",
+      "label": "Symbole pour B",
+      "placeholder": "B",
+      "default": "B",
+      "description": "Symbole représentant 'B' dans le code"
+    },
+    "auto_detect_symbols": {
+      "type": "checkbox",
+      "label": "Détection automatique des symboles A/B",
+      "default": true,
+      "description": "Détecte automatiquement les deux symboles utilisés dans le texte"
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Texte transformé"
+    }
+  }
+}

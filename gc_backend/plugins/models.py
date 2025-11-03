@@ -117,8 +117,88 @@ class Plugin(db.Model):
         if include_metadata:
             import json
             try:
-                data['metadata'] = json.loads(self.metadata_json) if self.metadata_json else {}
+                metadata = json.loads(self.metadata_json) if self.metadata_json else {}
+                data['metadata'] = metadata
+                
+                # Transformer input_types en input_schema (JSON Schema)
+                if 'input_types' in metadata:
+                    data['input_schema'] = self._convert_input_types_to_json_schema(metadata['input_types'])
+                
+                # Ajouter output_types si présent
+                if 'output_types' in metadata:
+                    data['output_types'] = metadata['output_types']
+                    
             except json.JSONDecodeError:
                 data['metadata'] = {}
         
         return data
+    
+    def _convert_input_types_to_json_schema(self, input_types: dict) -> dict:
+        """
+        Convertit le format input_types personnalisé en JSON Schema standard.
+        
+        Args:
+            input_types (dict): Format personnalisé du plugin.json
+            
+        Returns:
+            dict: JSON Schema standard
+        """
+        schema = {
+            'type': 'object',
+            'properties': {},
+            'required': []
+        }
+        
+        for key, field_def in input_types.items():
+            prop = {}
+            
+            # Type de base
+            field_type = field_def.get('type', 'string')
+            
+            # Mapping des types personnalisés vers JSON Schema
+            if field_type == 'select':
+                prop['type'] = 'string'
+                # Options comme enum
+                options = field_def.get('options', [])
+                if options:
+                    # Support des options simples ou avec label
+                    if isinstance(options[0], dict):
+                        prop['enum'] = [opt['value'] for opt in options]
+                    else:
+                        prop['enum'] = options
+            elif field_type == 'checkbox':
+                prop['type'] = 'boolean'
+            elif field_type == 'number':
+                prop['type'] = 'number'
+                if 'min' in field_def:
+                    prop['minimum'] = field_def['min']
+                if 'max' in field_def:
+                    prop['maximum'] = field_def['max']
+                if 'step' in field_def:
+                    prop['multipleOf'] = field_def['step']
+            elif field_type == 'integer':
+                prop['type'] = 'integer'
+                if 'min' in field_def:
+                    prop['minimum'] = field_def['min']
+                if 'max' in field_def:
+                    prop['maximum'] = field_def['max']
+            else:  # string par défaut
+                prop['type'] = 'string'
+            
+            # Métadonnées
+            if 'label' in field_def:
+                prop['title'] = field_def['label']
+            if 'description' in field_def:
+                prop['description'] = field_def['description']
+            if 'default' in field_def:
+                prop['default'] = field_def['default']
+            if 'placeholder' in field_def:
+                prop['placeholder'] = field_def['placeholder']
+            
+            schema['properties'][key] = prop
+            
+            # Champs requis (par défaut, tous sauf 'text' sont optionnels)
+            if field_def.get('required', False):
+                schema['required'].append(key)
+        
+        return schema
