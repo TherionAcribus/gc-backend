@@ -37,11 +37,13 @@ def create_app() -> Flask:
     from .blueprints.geocaches import bp as geocaches_bp
     from .blueprints.plugins import bp as plugins_bp, init_plugin_manager
     from .blueprints.tasks import bp as tasks_bp, init_task_manager
+    from .blueprints.coordinates import coordinates_bp
 
     app.register_blueprint(zones_bp)
     app.register_blueprint(geocaches_bp)
     app.register_blueprint(plugins_bp)
     app.register_blueprint(tasks_bp)
+    app.register_blueprint(coordinates_bp)
 
     # Initialiser le PluginManager
     from .plugins import PluginManager
