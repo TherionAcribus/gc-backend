@@ -1356,6 +1356,24 @@ def detect_gps_coordinates(text: str, include_numeric_only: bool = False, origin
             # Injecter la provenance et la confiance dans le résultat avant de le renvoyer
             result["source"] = detect_func.__name__
             result["confidence"] = confidence_map.get(detect_func, 0.75)
+            # 🆕 Conversion décimale centralisée côté backend pour éviter de la recalculer côté frontend
+            if result.get("decimal_latitude") is None or result.get("decimal_longitude") is None:
+                ddm_lat = result.get("ddm_lat")
+                ddm_lon = result.get("ddm_lon")
+
+                # Si nécessaire, tenter d'extraire latitude/longitude à partir du format combiné
+                if (not ddm_lat or not ddm_lon) and result.get("ddm"):
+                    combined_match = re.match(r"^([NS][^NSWE]+)[\s,]+([EW].+)$", result["ddm"].strip(), re.IGNORECASE)
+                    if combined_match:
+                        ddm_lat = ddm_lat or combined_match.group(1).strip()
+                        ddm_lon = ddm_lon or combined_match.group(2).strip()
+
+                if ddm_lat and ddm_lon:
+                    decimal_coords = convert_ddm_to_decimal(ddm_lat, ddm_lon)
+                    if decimal_coords.get('latitude') is not None and decimal_coords.get('longitude') is not None:
+                        result.setdefault('decimal_latitude', decimal_coords['latitude'])
+                        result.setdefault('decimal_longitude', decimal_coords['longitude'])
+
             print(f"[DEBUG] detect_gps_coordinates: Coordonnées trouvées par {detect_func.__name__}: {result}")
             return result
     
