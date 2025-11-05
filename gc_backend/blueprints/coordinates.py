@@ -1375,6 +1375,8 @@ def detect_gps_coordinates(text: str, include_numeric_only: bool = False, origin
                         result.setdefault('decimal_longitude', decimal_coords['longitude'])
 
             print(f"[DEBUG] detect_gps_coordinates: Coordonnées trouvées par {detect_func.__name__}: {result}")
+            result["matched_text"] = text
+            result["extract"] = {"plugin": detect_func.__name__, "version": "1.0"}
             return result
     
     print("[DEBUG] detect_gps_coordinates: Aucune coordonnée GPS détectée")
@@ -1384,7 +1386,9 @@ def detect_gps_coordinates(text: str, include_numeric_only: bool = False, origin
         "ddm_lon": None,
         "ddm": None,
         "source": None,
-        "confidence": 0.0
+        "confidence": 0.0,
+        "matched_text": None,
+        "extract": None
     }
 
 # ------------------------------------------------------------------------------
