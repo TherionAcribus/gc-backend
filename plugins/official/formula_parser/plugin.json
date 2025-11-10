@@ -1,0 +1,43 @@
+{
+  "name": "formula_parser",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Détecte et parse les formules de coordonnées GPS avec variables (ex: N 47° 5E.FTN E 006° 5A.JVF)",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Parser", "Coordinates", "Mystery"],
+  "kinds": ["geo", "solver"],
+  "brute_force": false,
+  "enable_scoring": false,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 10,
+  "capabilities": {
+    "analyze": true,
+    "decode": false,
+    "encode": false
+  },
+  "defaults": {
+    "include_in_analysis": true,
+    "include_in_decode": false
+  },
+  "input_types": {
+    "text": {
+      "type": "textarea",
+      "label": "Texte à analyser",
+      "placeholder": "Description de géocache ou texte contenant des formules...",
+      "required": true,
+      "description": "Description de géocache, waypoint ou texte contenant des formules de coordonnées"
+    }
+  },
+  "output_types": {
+    "results": {
+      "type": "object",
+      "label": "Résultats de parsing"
+    }
+  }
+}
