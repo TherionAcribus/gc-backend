@@ -1,0 +1,86 @@
+{
+  "name": "metasolver",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Exécute automatiquement un ensemble de plugins pour détecter ou décoder un texte.",
+  "author": "MysterAI Team",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Meta", "Automation", "Detection"],
+  "kinds": ["solver", "code"],
+  "brute_force": false,
+  "enable_scoring": true,
+  "accept_accents": true,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 60,
+  "capabilities": {
+    "analyze": true,
+    "decode": true,
+    "encode": false
+  },
+  "defaults": {
+    "include_in_analysis": true,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "textarea",
+      "label": "Texte à traiter",
+      "placeholder": "Collez le texte à analyser ou décoder...",
+      "required": true
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": [
+        {"value": "decode", "label": "Décodage"},
+        {"value": "detect", "label": "Détection"}
+      ],
+      "default": "decode",
+      "description": "Choisissez entre décoder le texte ou détecter les codes possibles."
+    },
+    "plugin_scope": {
+      "type": "select",
+      "label": "Portée des plugins",
+      "options": [
+        {"value": "selected", "label": "Plugins actifs uniquement"},
+        {"value": "all", "label": "Tous les plugins disponibles"}
+      ],
+      "default": "selected",
+      "description": "Inclure uniquement les plugins actifs ou tout le catalogue."
+    },
+    "plugin_list": {
+      "type": "string",
+      "label": "Filtre de plugins (optionnel)",
+      "placeholder": "caesar, bacon_code",
+      "description": "Noms de plugins séparés par des virgules pour restreindre l'exécution."
+    },
+    "enable_bruteforce": {
+      "type": "checkbox",
+      "label": "Autoriser le mode bruteforce",
+      "default": true,
+      "description": "Transmet l'option brute-force aux plugins compatibles."
+    },
+    "detect_coordinates": {
+      "type": "checkbox",
+      "label": "Analyser les coordonnées GPS",
+      "default": true,
+      "description": "Demande aux plugins compatibles de retourner des coordonnées détectées."
+    },
+    "max_plugins": {
+      "type": "number",
+      "label": "Limite de plugins",
+      "description": "Nombre maximum de plugins à lancer (0 = illimité)",
+      "min": 0
+    }
+  },
+  "output_types": {
+    "results": {
+      "type": "object",
+      "label": "Résultats agrégés"
+    }
+  }
+}
