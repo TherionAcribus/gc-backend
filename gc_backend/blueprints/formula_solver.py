@@ -3,19 +3,17 @@ Blueprint Formula Solver
 Routes API pour la résolution de formules de coordonnées GPS
 """
 
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, request, jsonify, current_app
 from loguru import logger
-from typing import Dict, Any
+from gc_backend.services.formula_questions_service import formula_questions_service
+from gc_backend.utils.coordinate_calculator import CoordinateCalculator
+from gc_backend.database import db
+from gc_backend.geocaches.models import Geocache
+from sqlalchemy import text
 
-from ..database import db
-from ..geocaches.models import Geocache
-from ..services.formula_questions_service import formula_questions_service
-from ..utils.coordinate_calculator import CoordinateCalculator
+formula_solver_bp = Blueprint('formula_solver', __name__, url_prefix='/api/formula-solver')
 
-bp = Blueprint('formula_solver', __name__)
-
-
-@bp.post('/api/formula-solver/detect-formulas')
+@formula_solver_bp.post('/detect-formulas')
 def detect_formulas():
     """
     Détecte les formules de coordonnées dans une géocache ou un texte brut.
@@ -104,7 +102,7 @@ def detect_formulas():
         }), 500
 
 
-@bp.post('/api/formula-solver/extract-questions')
+@formula_solver_bp.post('/extract-questions')
 def extract_questions():
     """
     Extrait les questions associées aux variables d'une formule.
@@ -200,7 +198,7 @@ def extract_questions():
         }), 500
 
 
-@bp.post('/api/formula-solver/calculate')
+@formula_solver_bp.post('/calculate')
 def calculate_coordinates():
     """
     Calcule les coordonnées finales à partir d'une formule et des valeurs.
@@ -303,3 +301,213 @@ def calculate_coordinates():
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+@formula_solver_bp.get('/geocache/<int:geocache_id>')
+def get_geocache_for_solver(geocache_id: int):
+    """
+    Récupère les informations d'une geocache pour le Formula Solver.
+    
+    Args:
+        geocache_id: ID de la geocache
+        
+    Returns:
+        JSON avec les données de la geocache :
+        {
+            "id": 123,
+            "gc_code": "GC12345",
+            "name": "Cache Mystery",
+            "description": "...",
+            "latitude": 47.5,
+            "longitude": 6.5
+        }
+    """
+    try:
+        # Récupérer la geocache
+        geocache = Geocache.query.filter_by(id=geocache_id).first()
+        
+        if not geocache:
+            logger.warning(f"Geocache {geocache_id} non trouvée")
+            return jsonify({
+                'status': 'error',
+                'error': f'Geocache {geocache_id} non trouvée'
+            }), 404
+        
+        logger.info(f"Geocache {geocache_id} ({geocache.gc_code}) récupérée pour Formula Solver")
+
+        # Les nouvelles structures stockent la description dans description_html
+        description = getattr(geocache, 'description_html', None)
+
+        # Fallback éventuel si un ancien champ subsiste
+        if not description:
+            description = getattr(geocache, 'description', '') or ''
+
+        return jsonify({
+            'status': 'success',
+            'geocache': {
+                'id': geocache.id,
+                'gc_code': geocache.gc_code,
+                'name': geocache.name,
+                'description': description or '',
+                'latitude': geocache.latitude,
+                'longitude': geocache.longitude
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de la geocache {geocache_id}: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@formula_solver_bp.post('/geocache/<int:geocache_id>/waypoint')
+def create_waypoint_from_formula(geocache_id: int):
+    """
+    Crée un waypoint depuis le résultat du Formula Solver.
+    
+    Args:
+        geocache_id: ID de la geocache
+        
+    Body JSON:
+        {
+            "name": "Solution formule",
+            "latitude": 47.123,
+            "longitude": 6.456,
+            "note": "Formule: N 47° AB.CDE E 006° FG.HIJ\nValeurs: A=1, B=2...",
+            "type": "Reference Point"  // optionnel
+        }
+        
+    Returns:
+        JSON avec le waypoint créé
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'error': 'Pas de données fournies'
+            }), 400
+        
+        # Validation des champs requis
+        name = data.get('name')
+        latitude = data.get('latitude')
+        longitude = data.get('longitude')
+        
+        if not name or latitude is None or longitude is None:
+            return jsonify({
+                'status': 'error',
+                'error': 'Champs requis: name, latitude, longitude'
+            }), 400
+        
+        # Validation des coordonnées
+        try:
+            lat = float(latitude)
+            lon = float(longitude)
+            
+            if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+                raise ValueError("Coordonnées hors limites")
+        except (ValueError, TypeError) as e:
+            return jsonify({
+                'status': 'error',
+                'error': f'Coordonnées invalides: {e}'
+            }), 400
+        
+        # Vérifier que la geocache existe
+        geocache = Geocache.query.filter_by(id=geocache_id).first()
+        
+        if not geocache:
+            return jsonify({
+                'status': 'error',
+                'error': f'Geocache {geocache_id} non trouvée'
+            }), 404
+        
+        # Générer le prefix automatiquement (WP01, WP02, etc.)
+        result = db.session.execute(
+            text('SELECT prefix FROM waypoints WHERE geocache_id = :geocache_id ORDER BY prefix DESC'),
+            {'geocache_id': geocache_id}
+        )
+        existing_waypoints = result.fetchall()
+        
+        # Extraire les numéros existants
+        existing_numbers = []
+        for wp in existing_waypoints:
+            if wp[0] and wp[0].startswith('WP'):
+                try:
+                    num = int(wp[0][2:])
+                    existing_numbers.append(num)
+                except ValueError:
+                    pass
+        
+        # Générer le prochain numéro
+        next_number = 1
+        if existing_numbers:
+            next_number = max(existing_numbers) + 1
+        
+        prefix = f"WP{next_number:02d}"
+        
+        # Formater les coordonnées en DDM
+        lat_deg = int(abs(lat))
+        lat_min = (abs(lat) - lat_deg) * 60
+        lat_dir = 'N' if lat >= 0 else 'S'
+        
+        lon_deg = int(abs(lon))
+        lon_min = (abs(lon) - lon_deg) * 60
+        lon_dir = 'E' if lon >= 0 else 'W'
+        
+        gc_coords = f"{lat_dir} {lat_deg}° {lat_min:.3f} {lon_dir} {lon_deg}° {lon_min:.3f}"
+        
+        # Créer le waypoint
+        note = data.get('note', '')
+        waypoint_type = data.get('type', 'Reference Point')
+        
+        result = db.session.execute(
+            text('''
+            INSERT INTO waypoints (
+                geocache_id, prefix, name, type, 
+                latitude, longitude, gc_coords, note
+            ) VALUES (:geocache_id, :prefix, :name, :type, :latitude, :longitude, :gc_coords, :note)
+            '''),
+            {
+                'geocache_id': geocache_id,
+                'prefix': prefix,
+                'name': name,
+                'type': waypoint_type,
+                'latitude': lat,
+                'longitude': lon,
+                'gc_coords': gc_coords,
+                'note': note
+            }
+        )
+        
+        waypoint_id = result.lastrowid
+        db.session.commit()
+        
+        logger.info(f"Waypoint {prefix} créé pour geocache {geocache.gc_code} (ID: {waypoint_id})")
+        
+        return jsonify({
+            'status': 'success',
+            'waypoint': {
+                'id': waypoint_id,
+                'prefix': prefix,
+                'name': name,
+                'type': waypoint_type,
+                'latitude': lat,
+                'longitude': lon,
+                'gc_coords': gc_coords,
+                'note': note
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du waypoint: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+# Alias pour l'import dans __init__.py
+bp = formula_solver_bp

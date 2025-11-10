@@ -139,39 +139,49 @@ class FormulaQuestionsService:
         if isinstance(content, str):
             return content
         
-        # Cas 2 : Objet Geocache (avec attribut description)
-        if hasattr(content, 'description'):
+        # Cas 2 : Objet Geocache (avec description et données enrichies)
+        if hasattr(content, 'id') and (hasattr(content, 'description') or hasattr(content, 'description_html')):
             geocache = content
             content_parts = []
-            
-            # Ajouter la description principale
-            if geocache.description:
+
+            # Ajouter la description principale (HTML ou texte)
+            description = getattr(geocache, 'description', None) or getattr(geocache, 'description_html', None)
+            if description:
                 content_parts.append("=== DESCRIPTION PRINCIPALE ===\n")
-                cleaned_description = self._clean_html(geocache.description)
+                cleaned_description = self._clean_html(description)
                 content_parts.append(cleaned_description)
                 content_parts.append("\n\n")
-            
-            # Ajouter les waypoints additionnels
+
+            # Ajouter les waypoints additionnels (anciens ou nouveaux schémas)
+            waypoints = None
             if hasattr(geocache, 'additional_waypoints') and geocache.additional_waypoints:
+                waypoints = geocache.additional_waypoints
+            elif hasattr(geocache, 'waypoints') and geocache.waypoints:
+                waypoints = geocache.waypoints
+
+            if waypoints:
                 content_parts.append("=== WAYPOINTS ADDITIONNELS ===\n")
-                for wp in geocache.additional_waypoints:
-                    # Prefix et nom
-                    content_parts.append(f"{wp.prefix} - {wp.name}\n")
-                    
-                    # Note du waypoint
-                    if hasattr(wp, 'note') and wp.note:
-                        cleaned_note = self._clean_html(wp.note)
+                for wp in waypoints:
+                    prefix = getattr(wp, 'prefix', '') or ''
+                    name = getattr(wp, 'name', '') or ''
+                    if prefix or name:
+                        content_parts.append(f"{prefix} {name}\n".strip() + "\n")
+
+                    note = getattr(wp, 'note', '')
+                    if note:
+                        cleaned_note = self._clean_html(note)
                         content_parts.append(f"Note: {cleaned_note}\n")
-                    
+
                     content_parts.append("\n")
-            
-            # Ajouter les hints (indices)
-            if hasattr(geocache, 'hint') and geocache.hint:
+
+            # Ajouter les hints / indices
+            hint = getattr(geocache, 'hint', None) or getattr(geocache, 'hints', None)
+            if hint:
                 content_parts.append("=== INDICE ===\n")
-                cleaned_hint = self._clean_html(geocache.hint)
+                cleaned_hint = self._clean_html(hint)
                 content_parts.append(cleaned_hint)
                 content_parts.append("\n\n")
-            
+
             # Limiter la longueur si nécessaire (éviter de surcharger)
             full_content = "".join(content_parts)
             max_length = 10000  # 10K caractères max
