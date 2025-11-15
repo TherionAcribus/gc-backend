@@ -1,0 +1,23 @@
+{
+  "name": "Arciela",
+  "description": "Arciela",
+  "type": "alphabet",
+  "category": "alphabets",
+  "version": "1.0.0",
+  "alphabetConfig": {
+    "type": "font",
+    "fontFile": "fonts/arciela.ttf",
+    "hasUpperCase": false,
+    "upperCaseOnly": false,
+    "characters": {
+      "letters": "all",
+      "numbers": "",
+      "special": {
+        ".": "point",
+        ",": "virgule",
+        "!": "exclamation",
+        "?": "question"
+      }
+    }
+  }
+}

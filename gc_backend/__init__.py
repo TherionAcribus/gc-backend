@@ -39,6 +39,7 @@ def create_app() -> Flask:
     from .blueprints.tasks import bp as tasks_bp, init_task_manager
     from .blueprints.coordinates import coordinates_bp
     from .blueprints.formula_solver import bp as formula_solver_bp
+    from .blueprints.alphabets import alphabets_bp
 
     app.register_blueprint(zones_bp)
     app.register_blueprint(geocaches_bp)
@@ -46,6 +47,7 @@ def create_app() -> Flask:
     app.register_blueprint(tasks_bp)
     app.register_blueprint(coordinates_bp)
     app.register_blueprint(formula_solver_bp)
+    app.register_blueprint(alphabets_bp)
 
     # Initialiser le PluginManager
     from .plugins import PluginManager
