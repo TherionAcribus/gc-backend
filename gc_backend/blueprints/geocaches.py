@@ -751,7 +751,7 @@ def set_corrected_coords_from_waypoint(geocache_id: int, waypoint_id: int):
         
         db.session.commit()
         
-        logger.info(f"[SET CORRECTED COORDS] Coordonnées corrigées mises à jour")
+        logger.info("[SET CORRECTED COORDS] Coordonnées corrigées mises à jour")
         
         return jsonify({
             'success': True,
@@ -808,8 +808,6 @@ def update_coordinates(geocache_id: int):
             return jsonify({'error': 'Geocache not found'}), 404
         
         # Parse les coordonnées pour calculer lat/lon
-        from ..geocaches.scraper import GeocachingScraper
-        
         def parse_gc_coordinates(coords_text: str):
             try:
                 parts = coords_text.split()
@@ -882,6 +880,58 @@ def reset_coordinates(geocache_id: int):
         return jsonify({'error': str(e)}), 500
 
 
+@bp.get('/api/geocaches/by-code/<gc_code>')
+def get_geocache_by_code(gc_code: str):
+    """Récupère une géocache par son code GC."""
+    try:
+        # Rechercher la géocache (peut exister dans plusieurs zones)
+        geocaches = Geocache.query.filter_by(gc_code=gc_code.upper()).all()
+
+        if not geocaches:
+            return jsonify({'error': 'Geocache not found'}), 404
+
+        # Si plusieurs géocaches avec le même code, prendre la première
+        # TODO: gérer le cas multi-zone si nécessaire
+        geocache = geocaches[0]
+
+        if len(geocaches) > 1:
+            logger.warning(f"Multiple geocaches found for code {gc_code}, returning first one (id={geocache.id})")
+
+        # Parser les coordonnées pour les retourner séparément
+        gc_lat = None
+        gc_lon = None
+
+        if geocache.coordinates_raw:
+            import re
+            # Parser le format "N 48° 38.204 E 006° 07.000"
+            match = re.match(r'^([NS])\s*(\d+)°\s*([\d.]+)\s+([EW])\s*(\d+)°\s*([\d.]+)', geocache.coordinates_raw)
+            if match:
+                lat_dir, lat_deg, lat_min, lon_dir, lon_deg, lon_min = match.groups()
+                gc_lat = f"{lat_dir} {lat_deg}° {lat_min}"
+                gc_lon = f"{lon_dir} {lon_deg}° {lon_min}"
+            else:
+                # Fallback: retourner les coordonnées brutes dans gc_lat
+                gc_lat = geocache.coordinates_raw
+                gc_lon = None
+
+        # Adapter le format pour le frontend (AssociatedGeocache)
+        result = {
+            'id': geocache.id,  # Pour le frontend: id
+            'database_id': geocache.id,  # Pour le frontend: databaseId
+            'gc_code': geocache.gc_code,
+            'name': geocache.name,
+            'gc_lat': gc_lat,  # Latitude au format Geocaching
+            'gc_lon': gc_lon,  # Longitude au format Geocaching
+        }
+
+        logger.info(f"Found geocache {gc_code} (id={geocache.id})")
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error fetching geocache by code {gc_code}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @bp.put('/api/geocaches/<int:geocache_id>/solved-status')
 def update_solved_status(geocache_id: int):
     """
@@ -890,20 +940,20 @@ def update_solved_status(geocache_id: int):
     try:
         data = request.get_json()
         solved_status = data.get('solved_status')
-        
+
         if solved_status not in ['not_solved', 'in_progress', 'solved']:
             return jsonify({'error': 'Invalid solved_status'}), 400
-        
+
         geocache = Geocache.query.get(geocache_id)
         if not geocache:
             return jsonify({'error': 'Geocache not found'}), 404
-        
+
         geocache.solved = solved_status
         db.session.commit()
-        
+
         logger.info(f"Updated solved status for geocache {geocache_id} to {solved_status}")
         return jsonify({'success': True, 'solved': solved_status})
-        
+
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error updating solved status: {e}", exc_info=True)
