@@ -59,15 +59,99 @@ def get_geocache_details(geocache_id: int):
         geocache = Geocache.query.get(geocache_id)
         if not geocache:
             return jsonify({'error': 'Geocache not found'}), 404
-        
+
         # Retourner le to_dict() complet qui inclut waypoints et checkers
         result = geocache.to_dict()
-        
+
         logger.info(f"Returning details for geocache {geocache.gc_code} (id={geocache_id})")
         return jsonify(result)
-        
+
     except Exception as e:
         logger.error(f"Error fetching geocache {geocache_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.get('/api/geocaches/<int:geocache_id>/nearby')
+def get_nearby_geocaches(geocache_id: int):
+    """Récupère les géocaches dans un rayon autour d'une géocache spécifique."""
+    try:
+        # Paramètres de requête
+        radius_km = float(request.args.get('radius', 5.0))  # Rayon en km, défaut 5km
+
+        # Récupérer la géocache centrale
+        geocache = Geocache.query.get(geocache_id)
+        if not geocache:
+            return jsonify({'error': 'Geocache not found'}), 404
+
+        if not geocache.latitude or not geocache.longitude:
+            return jsonify({'error': 'Geocache has no coordinates'}), 400
+
+        center_lat = geocache.latitude
+        center_lon = geocache.longitude
+
+        # Approximation simple de la distance :
+        # 1 degré latitude ≈ 111 km
+        # 1 degré longitude ≈ 111 * cos(lat) km
+        import math
+        lat_delta = radius_km / 111.0  # degrés
+        lon_delta = radius_km / (111.0 * math.cos(math.radians(center_lat)))  # degrés
+
+        # Requête pour les géocaches dans la bounding box approximative
+        nearby_geocaches = Geocache.query.filter(
+            Geocache.id != geocache_id,  # Exclure la géocache centrale
+            Geocache.latitude.between(center_lat - lat_delta, center_lat + lat_delta),
+            Geocache.longitude.between(center_lon - lon_delta, center_lon + lon_delta),
+            Geocache.latitude.isnot(None),
+            Geocache.longitude.isnot(None)
+        ).all()
+
+        # Filtrer plus précisément avec la distance exacte (formule de Haversine)
+        def haversine_distance(lat1, lon1, lat2, lon2):
+            """Calcule la distance en km entre deux points."""
+            R = 6371  # Rayon de la Terre en km
+
+            dlat = math.radians(lat2 - lat1)
+            dlon = math.radians(lon2 - lon1)
+
+            a = math.sin(dlat/2) * math.sin(dlat/2) + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2) * math.sin(dlon/2)
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+            return R * c
+
+        # Filtrer les géocaches vraiment dans le rayon
+        filtered_geocaches = []
+        for gc in nearby_geocaches:
+            distance = haversine_distance(center_lat, center_lon, gc.latitude, gc.longitude)
+            if distance <= radius_km:
+                filtered_geocaches.append({
+                    'id': gc.id,
+                    'gc_code': gc.gc_code,
+                    'name': gc.name,
+                    'cache_type': gc.type,
+                    'difficulty': gc.difficulty,
+                    'terrain': gc.terrain,
+                    'latitude': gc.latitude,
+                    'longitude': gc.longitude,
+                    'found': gc.found or False,
+                    'is_corrected': gc.is_corrected or False,
+                    'distance_km': round(distance, 2),
+                    'zone_id': gc.zone_id
+                })
+
+        logger.info(f"Found {len(filtered_geocaches)} geocaches within {radius_km}km of {geocache.gc_code}")
+        return jsonify({
+            'center_geocache': {
+                'id': geocache.id,
+                'gc_code': geocache.gc_code,
+                'latitude': center_lat,
+                'longitude': center_lon
+            },
+            'nearby_geocaches': filtered_geocaches,
+            'radius_km': radius_km
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching nearby geocaches for geocache {geocache_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
