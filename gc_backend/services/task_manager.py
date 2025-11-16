@@ -115,7 +115,7 @@ class TaskManager:
         _running (bool): Indicateur d'exécution du manager
     """
     
-    def __init__(self, max_workers: int = 4):
+    def __init__(self, max_workers: int = 4, auto_start: bool = True):
         """
         Initialise le TaskManager.
         
@@ -123,23 +123,46 @@ class TaskManager:
             max_workers (int): Nombre maximum de workers (défaut: 4)
         """
         self.max_workers = max_workers
-        self.executor = ThreadPoolExecutor(
-            max_workers=max_workers,
-            thread_name_prefix="plugin_worker"
-        )
+        self.executor: Optional[ThreadPoolExecutor] = None
         self.tasks: Dict[str, TaskInfo] = {}
         self._lock = threading.Lock()
+        self._running = False
+        self._cleanup_thread: Optional[threading.Thread] = None
+        self._auto_start = auto_start
+
+        if auto_start:
+            self._start_executor()
+        else:
+            logger.info(
+                "TaskManager initialisé en mode différé (max_workers=%s)",
+                max_workers
+            )
+
+    def _start_executor(self) -> None:
+        if self.executor is not None:
+            return
+
+        self.executor = ThreadPoolExecutor(
+            max_workers=self.max_workers,
+            thread_name_prefix="plugin_worker"
+        )
         self._running = True
-        
-        # Lancer le thread de nettoyage automatique
         self._cleanup_thread = threading.Thread(
             target=self._cleanup_loop,
             daemon=True,
             name="task_cleanup"
         )
         self._cleanup_thread.start()
-        
-        logger.info(f"TaskManager initialisé avec {max_workers} workers")
+
+        logger.info(
+            "TaskManager prêt (%s workers, auto_start=%s)",
+            self.max_workers,
+            self._auto_start
+        )
+
+    def _ensure_executor(self) -> None:
+        if self.executor is None:
+            self._start_executor()
     
     def submit_task(
         self,
@@ -174,6 +197,7 @@ class TaskManager:
         with self._lock:
             self.tasks[task_id] = task_info
         
+        self._ensure_executor()
         # Soumettre au ThreadPoolExecutor
         future = self.executor.submit(
             self._execute_task,
@@ -462,7 +486,9 @@ class TaskManager:
         logger.info("Arrêt du TaskManager...")
         
         self._running = False
-        self.executor.shutdown(wait=wait)
+        if self.executor:
+            self.executor.shutdown(wait=wait)
+            self.executor = None
         
         logger.info("TaskManager arrêté")
     

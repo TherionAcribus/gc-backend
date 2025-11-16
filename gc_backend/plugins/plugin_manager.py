@@ -28,6 +28,7 @@ from .wrappers import (
     PluginType,
     PluginInterface
 )
+from ..utils.preferences import get_value_or_default
 
 
 class PluginManager:
@@ -57,9 +58,13 @@ class PluginManager:
         self._schema: Optional[Dict] = None
         self._plugin_cache: Dict[str, Dict] = {}
         self._loading_errors: Dict[str, str] = {}
+        self.lazy_mode: bool = True
+        self.default_timeout: int = 60
+        self.allow_long_running: bool = False
         
         # Charger le schéma de validation
         self._load_schema()
+        self._load_runtime_preferences()
         
         logger.info(f"PluginManager initialisé avec répertoire: {self.plugins_dir}")
     
@@ -681,6 +686,31 @@ class PluginManager:
             self.unload_plugin(plugin_name)
         
         logger.info(f"{len(plugin_names)} plugin(s) déchargé(s)")
+
+    def preload_enabled_plugins(self) -> int:
+        """
+        Précharge les plugins actifs lorsque le lazy mode est désactivé.
+        """
+        if not self.app:
+            return 0
+
+        count = 0
+        try:
+            with self.app.app_context():
+                plugin_names = [
+                    plugin.name
+                    for plugin in Plugin.query.filter_by(enabled=True).all()
+                ]
+
+            for plugin_name in plugin_names:
+                if self.get_plugin(plugin_name):
+                    count += 1
+
+            logger.info("Préchargement de %d plugin(s)", count)
+        except Exception as error:
+            logger.error("Erreur lors du préchargement des plugins: %s", error)
+
+        return count
     
     def reload_plugin(self, plugin_name: str) -> bool:
         """
@@ -712,14 +742,19 @@ class PluginManager:
         Returns:
             int: Timeout en secondes (défaut: 30)
         """
+        default_timeout = getattr(self, 'default_timeout', 60)
+        allow_long_running = getattr(self, 'allow_long_running', False)
         try:
             if plugin_record.metadata_json:
                 metadata = json.loads(plugin_record.metadata_json)
-                return metadata.get('timeout_seconds', 30)
+                timeout = metadata.get('timeout_seconds', default_timeout)
+                if not allow_long_running:
+                    return min(timeout, default_timeout)
+                return timeout
         except Exception:
             pass
         
-        return 30
+        return default_timeout
     
     # =========================================================================
     # Gestion du statut
@@ -760,3 +795,21 @@ class PluginManager:
             f"<PluginManager plugins_dir={self.plugins_dir} "
             f"loaded={len(self.loaded_plugins)}>"
         )
+
+    def _load_runtime_preferences(self) -> None:
+        if not self.app:
+            return
+
+        try:
+            with self.app.app_context():
+                self.lazy_mode = bool(get_value_or_default('geoApp.plugins.lazyMode', True))
+                self.default_timeout = int(get_value_or_default('geoApp.plugins.executor.timeoutSec', 60))
+                self.allow_long_running = bool(get_value_or_default('geoApp.plugins.executor.allowLongRunning', False))
+                logger.info(
+                    "Préférences plugins -> lazy_mode=%s timeout=%ss allow_long_running=%s",
+                    self.lazy_mode,
+                    self.default_timeout,
+                    self.allow_long_running
+                )
+        except Exception as error:
+            logger.warning("Impossible de charger les préférences plugins: %s", error)

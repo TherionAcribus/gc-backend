@@ -5,6 +5,7 @@ from flask_migrate import Migrate
 
 from .config import Config
 from .database import init_db
+from .utils.preferences import get_value_or_default
 
 
 # Configure logging
@@ -28,6 +29,11 @@ def create_app() -> Flask:
     # Init DB et données par défaut
     init_db(app)
 
+    with app.app_context():
+        auto_discover_plugins = bool(get_value_or_default('geoApp.plugins.autoDiscoverOnStart', True))
+        task_auto_start = bool(get_value_or_default('geoApp.tasks.autoStartBackground', True))
+        task_max_workers = int(get_value_or_default('geoApp.tasks.maxWorkers', 4))
+
     # Init Flask-Migrate
     from .database import db
     migrate = Migrate(app, db)
@@ -40,6 +46,7 @@ def create_app() -> Flask:
     from .blueprints.coordinates import coordinates_bp
     from .blueprints.formula_solver import bp as formula_solver_bp
     from .blueprints.alphabets import alphabets_bp
+    from .blueprints.preferences import bp as preferences_bp
 
     app.register_blueprint(zones_bp)
     app.register_blueprint(geocaches_bp)
@@ -48,6 +55,7 @@ def create_app() -> Flask:
     app.register_blueprint(coordinates_bp)
     app.register_blueprint(formula_solver_bp)
     app.register_blueprint(alphabets_bp)
+    app.register_blueprint(preferences_bp)
 
     # Initialiser le PluginManager
     from .plugins import PluginManager
@@ -63,12 +71,22 @@ def create_app() -> Flask:
     is_migration = 'flask' in sys.argv[0] and 'db' in sys.argv
     is_testing = os.environ.get('TESTING') == '1'
     
-    if not is_migration and not is_testing:
+    if auto_discover_plugins and not is_migration and not is_testing:
         with app.app_context():
             plugin_manager.discover_plugins()
+    else:
+        logging.info(
+            "Découverte des plugins ignorée (auto_discover=%s, migration=%s, tests=%s)",
+            auto_discover_plugins,
+            is_migration,
+            is_testing
+        )
     
     # Initialiser le blueprint plugins avec le manager
     init_plugin_manager(plugin_manager)
+    
+    if not plugin_manager.lazy_mode:
+        plugin_manager.preload_enabled_plugins()
     
     # Stocker le manager dans l'app pour accès global
     app.plugin_manager = plugin_manager
@@ -76,7 +94,7 @@ def create_app() -> Flask:
     # Initialiser le TaskManager
     from .services import TaskManager
     
-    task_manager = TaskManager(max_workers=4)
+    task_manager = TaskManager(max_workers=task_max_workers, auto_start=task_auto_start)
     
     # Initialiser le blueprint tasks avec les managers
     init_task_manager(task_manager, plugin_manager)
