@@ -6,6 +6,7 @@ Routes API pour la résolution de formules de coordonnées GPS
 from flask import Blueprint, request, jsonify, current_app
 from loguru import logger
 from gc_backend.services.formula_questions_service import formula_questions_service
+from gc_backend.services.web_search_service import web_search_service
 from gc_backend.utils.coordinate_calculator import CoordinateCalculator
 from gc_backend.database import db
 from gc_backend.geocaches.models import Geocache
@@ -63,12 +64,21 @@ def detect_formulas():
             
             # Préparer le texte : description + waypoints
             text_parts = []
-            
-            if geocache.description:
-                text_parts.append(geocache.description)
-            
-            if geocache.additional_waypoints:
-                for wp in geocache.additional_waypoints:
+
+            # Les nouvelles structures stockent la description dans description_html
+            description = getattr(geocache, 'description_html', None)
+
+            # Fallback éventuel si un ancien champ subsiste
+            if not description:
+                description = getattr(geocache, 'description', '') or ''
+
+            if description:
+                text_parts.append(description)
+
+            # Vérifier si additional_waypoints existe
+            additional_waypoints = getattr(geocache, 'additional_waypoints', None)
+            if additional_waypoints:
+                for wp in additional_waypoints:
                     if wp.note:
                         text_parts.append(wp.note)
             
@@ -503,6 +513,337 @@ def create_waypoint_from_formula(geocache_id: int):
         
     except Exception as e:
         logger.error(f"Erreur lors de la création du waypoint: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+# ============================================================================
+# ENDPOINTS AI POUR TOOLS
+# ============================================================================
+
+@formula_solver_bp.post('/ai/detect-formula')
+def ai_detect_formula():
+    """
+    Endpoint optimisé pour l'agent IA - Détection de formule avec contexte enrichi.
+    
+    Body JSON:
+        {
+            "text": "Description de la géocache...",
+            "geocache_id": 123  // optionnel
+        }
+    
+    Returns:
+        {
+            "status": "success",
+            "formulas": [...],
+            "context": {
+                "total_found": 1,
+                "confidence_avg": 0.9
+            }
+        }
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        text = data.get('text')
+        geocache_id = data.get('geocache_id')
+        
+        if not text and not geocache_id:
+            return jsonify({
+                'status': 'error',
+                'error': 'Paramètre text ou geocache_id requis'
+            }), 400
+        
+        # Réutiliser la logique existante
+        if geocache_id:
+            geocache = Geocache.query.get(geocache_id)
+            if not geocache:
+                return jsonify({
+                    'status': 'error',
+                    'error': f'Géocache {geocache_id} introuvable'
+                }), 404
+            
+            # Préparer le texte : description + waypoints
+            text_parts = []
+
+            # Les nouvelles structures stockent la description dans description_html
+            description = getattr(geocache, 'description_html', None)
+
+            # Fallback éventuel si un ancien champ subsiste
+            if not description:
+                description = getattr(geocache, 'description', '') or ''
+
+            if description:
+                text_parts.append(description)
+
+            # Vérifier si additional_waypoints existe
+            additional_waypoints = getattr(geocache, 'additional_waypoints', None)
+            if additional_waypoints:
+                for wp in additional_waypoints:
+                    if wp.note:
+                        text_parts.append(wp.note)
+
+            text = "\n\n".join(text_parts)
+        
+        # Appeler le plugin formula_parser
+        plugin_manager = current_app.plugin_manager
+        result = plugin_manager.execute_plugin('formula_parser', {'text': text})
+        
+        if result.get('status') == 'error':
+            return jsonify({
+                'status': 'error',
+                'error': result.get('error', {}).get('message', 'Erreur inconnue')
+            }), 500
+        
+        formulas = result.get('results', [])
+        
+        # Calculer des statistiques pour l'IA
+        total_found = len(formulas)
+        confidence_avg = 0
+        if formulas:
+            confidence_avg = sum(f.get('confidence', 0) for f in formulas) / total_found
+        
+        logger.info(f"[AI] Détection formule: {total_found} trouvée(s), confiance moyenne: {confidence_avg:.2f}")
+        
+        return jsonify({
+            'status': 'success',
+            'formulas': formulas,
+            'context': {
+                'total_found': total_found,
+                'confidence_avg': round(confidence_avg, 2),
+                'summary': result.get('summary', '')
+            }
+        })
+    
+    except Exception as e:
+        logger.error(f"[AI] Erreur détection formule: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@formula_solver_bp.post('/ai/find-questions')
+def ai_find_questions():
+    """
+    Endpoint optimisé pour l'agent IA - Recherche de questions pour variables.
+    
+    Body JSON:
+        {
+            "text": "A. Nombre de fenêtres\nB: Année...",
+            "variables": ["A", "B", "C"]
+        }
+    
+    Returns:
+        {
+            "status": "success",
+            "questions": {"A": "Nombre de fenêtres", "B": "Année", "C": ""},
+            "found_count": 2,
+            "missing": ["C"]
+        }
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        text = data.get('text')
+        variables = data.get('variables', [])
+        
+        if not text or not variables:
+            return jsonify({
+                'status': 'error',
+                'error': 'Paramètres text et variables requis'
+            }), 400
+        
+        # Utiliser le service existant
+        questions = formula_questions_service.extract_questions_with_regex(text, variables)
+        
+        # Identifier les variables sans question
+        found_count = len([q for q in questions.values() if q])
+        missing = [v for v in variables if not questions.get(v)]
+        
+        logger.info(f"[AI] Recherche questions: {found_count}/{len(variables)} trouvées")
+        
+        return jsonify({
+            'status': 'success',
+            'questions': questions,
+            'found_count': found_count,
+            'missing': missing
+        })
+    
+    except Exception as e:
+        logger.error(f"[AI] Erreur recherche questions: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@formula_solver_bp.post('/ai/search-answer')
+def ai_search_answer():
+    """
+    Endpoint optimisé pour l'agent IA - Recherche de réponse sur Internet.
+    
+    Body JSON:
+        {
+            "question": "Quelle est la hauteur de la Tour Eiffel?",
+            "context": "géocache Paris",  // optionnel
+            "max_results": 3  // optionnel, défaut 5
+        }
+    
+    Returns:
+        {
+            "status": "success",
+            "results": [
+                {
+                    "text": "La Tour Eiffel mesure 330 mètres",
+                    "source": "https://...",
+                    "score": 0.9,
+                    "type": "instant_answer"
+                }
+            ],
+            "best_answer": "La Tour Eiffel mesure 330 mètres"
+        }
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        question = data.get('question')
+        context = data.get('context')
+        max_results = data.get('max_results', 5)
+        
+        if not question:
+            return jsonify({
+                'status': 'error',
+                'error': 'Paramètre question requis'
+            }), 400
+        
+        # Rechercher sur le web
+        results = web_search_service.search(question, context, max_results)
+        
+        # Extraire la meilleure réponse
+        best_answer = web_search_service.extract_answer(results)
+        
+        logger.info(f"[AI] Recherche web: {len(results)} résultats pour '{question}'")
+        
+        return jsonify({
+            'status': 'success',
+            'results': results,
+            'best_answer': best_answer
+        })
+    
+    except Exception as e:
+        logger.error(f"[AI] Erreur recherche web: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@formula_solver_bp.post('/ai/suggest-calculation-type')
+def ai_suggest_calculation_type():
+    """
+    Endpoint optimisé pour l'agent IA - Suggère le type de calcul pour une réponse.
+    
+    Body JSON:
+        {
+            "answer": "Tour Eiffel",
+            "question": "Monument de Paris"  // optionnel, pour contexte
+        }
+    
+    Returns:
+        {
+            "status": "success",
+            "suggestions": [
+                {
+                    "type": "length",
+                    "confidence": 0.8,
+                    "result": 11,
+                    "description": "Longueur du texte (sans espaces)"
+                },
+                {
+                    "type": "checksum",
+                    "confidence": 0.3,
+                    "result": 0,
+                    "description": "Checksum (pas de chiffres dans la réponse)"
+                }
+            ],
+            "recommended": "length"
+        }
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        answer = data.get('answer', '')
+        question = data.get('question', '')
+        
+        if not answer:
+            return jsonify({
+                'status': 'error',
+                'error': 'Paramètre answer requis'
+            }), 400
+        
+        suggestions = []
+        
+        # 1. Longueur (sans espaces)
+        length = len(answer.replace(' ', ''))
+        length_confidence = 0.8 if length > 0 and length < 100 else 0.3
+        suggestions.append({
+            'type': 'length',
+            'confidence': length_confidence,
+            'result': length,
+            'description': 'Longueur du texte (sans espaces)'
+        })
+        
+        # 2. Checksum (somme des chiffres)
+        import re
+        digits = re.findall(r'\d', answer)
+        checksum = sum(int(d) for d in digits)
+        checksum_confidence = 0.7 if digits else 0.1
+        suggestions.append({
+            'type': 'checksum',
+            'confidence': checksum_confidence,
+            'result': checksum,
+            'description': f'Checksum (somme de {len(digits)} chiffres)'
+        })
+        
+        # 3. Checksum réduit
+        reduced_checksum = checksum
+        while reduced_checksum >= 10:
+            reduced_checksum = sum(int(d) for d in str(reduced_checksum))
+        suggestions.append({
+            'type': 'reduced_checksum',
+            'confidence': checksum_confidence * 0.9,
+            'result': reduced_checksum,
+            'description': 'Checksum réduit (récursif jusqu\'à 1 chiffre)'
+        })
+        
+        # 4. Valeur directe (si c'est un nombre)
+        try:
+            value = int(answer.strip())
+            value_confidence = 0.95
+            suggestions.append({
+                'type': 'value',
+                'confidence': value_confidence,
+                'result': value,
+                'description': 'Valeur numérique directe'
+            })
+        except (ValueError, AttributeError):
+            pass
+        
+        # Trier par confiance décroissante
+        suggestions.sort(key=lambda x: x['confidence'], reverse=True)
+        
+        # Recommander le type avec la plus haute confiance
+        recommended = suggestions[0]['type'] if suggestions else 'length'
+        
+        logger.info(f"[AI] Suggestion calcul pour '{answer[:30]}...': {recommended}")
+        
+        return jsonify({
+            'status': 'success',
+            'suggestions': suggestions,
+            'recommended': recommended
+        })
+    
+    except Exception as e:
+        logger.error(f"[AI] Erreur suggestion calcul: {e}")
         return jsonify({
             'status': 'error',
             'error': str(e)

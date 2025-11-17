@@ -54,6 +54,13 @@ class FormulaQuestionsService:
             return {letter: "" for letter in letters}
         
         logger.debug(f"Contenu préparé ({len(prepared_content)} caractères)")
+        logger.debug(f"Contenu préparé (aperçu): {repr(prepared_content[:200])}...")
+
+        # Vérifier si le contenu contient encore du HTML
+        if '<' in prepared_content and '>' in prepared_content:
+            logger.warning("⚠️ ATTENTION: Le contenu contient encore des balises HTML ! Le nettoyage a échoué.")
+        else:
+            logger.debug("✅ Contenu nettoyé correctement (pas de balises HTML)")
         
         # Initialiser le résultat
         result = {letter: "" for letter in letters}
@@ -83,9 +90,13 @@ class FormulaQuestionsService:
         
         # Parcourir tous les patterns
         for pattern_idx, pattern in enumerate(patterns):
+            logger.debug(f"Traitement pattern {pattern_idx + 1}: {pattern}")
             matches = re.finditer(pattern, prepared_content, re.DOTALL | re.MULTILINE)
+            matches_list = list(matches)  # Convertir en liste pour pouvoir compter et déboguer
+            logger.debug(f"Pattern {pattern_idx + 1}: {len(matches_list)} matches trouvés")
             
-            for match in matches:
+            for match in matches_list:
+                logger.debug(f"Match trouvé: groupes={match.groups()}, span={match.span()}")
                 if len(match.groups()) >= 2:
                     # Déterminer quelle groupe contient la lettre et lequel contient la question
                     if pattern_idx == 2:  # Pattern "Question A:" (dernier)
@@ -103,6 +114,7 @@ class FormulaQuestionsService:
                     
                     # Vérifier que la lettre est bien dans notre liste
                     if letter in letters:
+                        logger.debug(f"Lettre {letter} trouvée dans la liste, question: '{question[:100]}...'")
                         # Ne remplacer que si la question n'est pas déjà trouvée
                         # ou si celle-ci est plus longue ET que c'est le même pattern
                         if not result[letter]:
@@ -112,6 +124,8 @@ class FormulaQuestionsService:
                             # Seulement remplacer si plus long et pas le pattern "Question A:"
                             result[letter] = question
                             logger.debug(f"Question mise à jour pour {letter}: {question[:50]}...")
+                    else:
+                        logger.debug(f"Lettre {letter} ignorée (pas dans la liste recherchée)")
         
         # Compter les questions trouvées
         found_count = len([q for q in result.values() if q])
@@ -137,7 +151,9 @@ class FormulaQuestionsService:
         """
         # Cas 1 : Contenu déjà sous forme de chaîne
         if isinstance(content, str):
-            return content
+            # Nettoyer le HTML même pour les chaînes brutes
+            logger.debug("Contenu reçu sous forme de chaîne - nettoyage HTML appliqué")
+            return self._clean_html(content)
         
         # Cas 2 : Objet Geocache (avec description et données enrichies)
         if hasattr(content, 'id') and (hasattr(content, 'description') or hasattr(content, 'description_html')):
