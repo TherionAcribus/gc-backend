@@ -30,6 +30,7 @@ class Geocache(db.Model):
     original_longitude = db.Column(db.Float)  # Coordonnées originales en décimal (pour la carte)
     original_coordinates_raw = db.Column(db.String(100))  # Coordonnées originales au format Geocaching (format utilisé par les joueurs)
     description_html = db.Column(db.Text)
+    description_raw = db.Column(db.Text)
     hints = db.Column(db.Text)
     attributes = db.Column(db.JSON)
     favorites_count = db.Column(db.Integer)
@@ -79,6 +80,7 @@ class Geocache(db.Model):
             'original_longitude': self.original_longitude,
             'original_coordinates_raw': self.original_coordinates_raw,
             'description_html': self.description_html,
+            'description_raw': self.description_raw,
             'hints': self.hints,
             'attributes': self.attributes,
             'favorites_count': self.favorites_count,

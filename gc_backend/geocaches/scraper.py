@@ -36,6 +36,7 @@ class ScrapedGeocache:
     original_longitude: float | None = None  # Coordonnées originales en décimal (pour la carte)
     original_coordinates_raw: str | None = None  # Coordonnées originales au format Geocaching (format utilisé par les joueurs)
     description_html: str | None = None
+    description_raw: str | None = None
     hints: str | None = None
     attributes: list[dict] | None = None
     favorites_count: int | None = None
@@ -468,12 +469,16 @@ class GeocachingScraper:
 
         # Description HTML
         description_html = None
+        description_raw = None
         desc_el = soup.find('span', {'id': 'ctl00_ContentBody_LongDescription'})
         if desc_el:
             try:
                 description_html = str(desc_el)
+                # Extraire le texte brut sans HTML
+                description_raw = desc_el.get_text(strip=True)
             except Exception:
                 description_html = desc_el.get_text(strip=True)
+                description_raw = description_html
 
         # Hints
         hints = None
@@ -661,6 +666,7 @@ class GeocachingScraper:
             original_longitude=original_longitude,
             original_coordinates_raw=original_coordinates_raw,
             description_html=description_html,
+            description_raw=description_raw,
             hints=hints,
             attributes=attributes or None,
             favorites_count=favorites_count,
