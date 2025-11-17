@@ -160,12 +160,21 @@ class FormulaQuestionsService:
             geocache = content
             content_parts = []
 
-            # Ajouter la description principale (HTML ou texte)
-            description = getattr(geocache, 'description', None) or getattr(geocache, 'description_html', None)
+            # Ajouter la description principale (utiliser description_raw si disponible)
+            description = getattr(geocache, 'description_raw', None)
+            if not description:
+                # Fallback vers description_html si description_raw n'existe pas
+                description = getattr(geocache, 'description_html', None)
+                if description:
+                    description = self._clean_html(description)
+
+            # Fallback final vers description
+            if not description:
+                description = getattr(geocache, 'description', None)
+
             if description:
                 content_parts.append("=== DESCRIPTION PRINCIPALE ===\n")
-                cleaned_description = self._clean_html(description)
-                content_parts.append(cleaned_description)
+                content_parts.append(description)
                 content_parts.append("\n\n")
 
             # Ajouter les waypoints additionnels (anciens ou nouveaux schémas)

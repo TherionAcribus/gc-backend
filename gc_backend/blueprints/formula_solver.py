@@ -5,6 +5,7 @@ Routes API pour la résolution de formules de coordonnées GPS
 
 from flask import Blueprint, request, jsonify, current_app
 from loguru import logger
+from bs4 import BeautifulSoup
 from gc_backend.services.formula_questions_service import formula_questions_service
 from gc_backend.services.web_search_service import web_search_service
 from gc_backend.utils.coordinate_calculator import CoordinateCalculator
@@ -65,10 +66,18 @@ def detect_formulas():
             # Préparer le texte : description + waypoints
             text_parts = []
 
-            # Les nouvelles structures stockent la description dans description_html
-            description = getattr(geocache, 'description_html', None)
+            # Utiliser description_raw (texte déjà nettoyé du HTML)
+            description = getattr(geocache, 'description_raw', None)
 
-            # Fallback éventuel si un ancien champ subsiste
+            # Fallback vers description_html si description_raw n'existe pas
+            if not description:
+                description = getattr(geocache, 'description_html', None)
+                # Nettoyer le HTML si nécessaire
+                if description:
+                    from bs4 import BeautifulSoup
+                    description = BeautifulSoup(description, 'html.parser').get_text()
+
+            # Fallback final vers description si rien d'autre
             if not description:
                 description = getattr(geocache, 'description', '') or ''
 
@@ -345,10 +354,18 @@ def get_geocache_for_solver(geocache_id: int):
         
         logger.info(f"Geocache {geocache_id} ({geocache.gc_code}) récupérée pour Formula Solver")
 
-        # Les nouvelles structures stockent la description dans description_html
-        description = getattr(geocache, 'description_html', None)
+        # Utiliser description_raw (texte déjà nettoyé du HTML)
+        description = getattr(geocache, 'description_raw', None)
 
-        # Fallback éventuel si un ancien champ subsiste
+        # Fallback vers description_html si description_raw n'existe pas
+        if not description:
+            description = getattr(geocache, 'description_html', None)
+            # Nettoyer le HTML si nécessaire
+            if description:
+                soup = BeautifulSoup(description, 'html.parser')
+                description = soup.get_text(strip=True)
+
+        # Fallback final vers description si rien d'autre
         if not description:
             description = getattr(geocache, 'description', '') or ''
 
@@ -567,10 +584,18 @@ def ai_detect_formula():
             # Préparer le texte : description + waypoints
             text_parts = []
 
-            # Les nouvelles structures stockent la description dans description_html
-            description = getattr(geocache, 'description_html', None)
+            # Utiliser description_raw (texte déjà nettoyé du HTML)
+            description = getattr(geocache, 'description_raw', None)
 
-            # Fallback éventuel si un ancien champ subsiste
+            # Fallback vers description_html si description_raw n'existe pas
+            if not description:
+                description = getattr(geocache, 'description_html', None)
+                # Nettoyer le HTML si nécessaire
+                if description:
+                    from bs4 import BeautifulSoup
+                    description = BeautifulSoup(description, 'html.parser').get_text()
+
+            # Fallback final vers description si rien d'autre
             if not description:
                 description = getattr(geocache, 'description', '') or ''
 
@@ -844,6 +869,62 @@ def ai_suggest_calculation_type():
     
     except Exception as e:
         logger.error(f"[AI] Erreur suggestion calcul: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@formula_solver_bp.post('/update-description-raw')
+def update_description_raw():
+    """
+    Met à jour le champ description_raw pour les géocaches existantes.
+
+    Cette fonction parcoure toutes les géocaches qui ont description_html
+    mais pas description_raw, et extrait le texte brut.
+    """
+    try:
+        logger.info("Début mise à jour description_raw...")
+
+        # Trouver les géocaches qui ont description_html mais pas description_raw
+        geocaches_to_update = Geocache.query.filter(
+            Geocache.description_html.isnot(None),
+            Geocache.description_raw.is_(None)
+        ).all()
+
+        updated_count = 0
+
+        for geocache in geocaches_to_update:
+            try:
+                # Extraire le texte brut du HTML
+                soup = BeautifulSoup(geocache.description_html, 'html.parser')
+                description_raw = soup.get_text(strip=True)
+
+                if description_raw:
+                    geocache.description_raw = description_raw
+                    updated_count += 1
+                    logger.debug(f"Geocache {geocache.gc_code}: description_raw mise à jour")
+
+            except Exception as e:
+                logger.warning(f"Erreur traitement geocache {geocache.gc_code}: {e}")
+                continue
+
+        # Commit des changements
+        if updated_count > 0:
+            db.session.commit()
+            logger.info(f"Mise à jour terminée: {updated_count} géocaches mises à jour")
+        else:
+            logger.info("Aucune géocache à mettre à jour")
+
+        return jsonify({
+            'status': 'success',
+            'updated_count': updated_count,
+            'message': f'{updated_count} géocaches mises à jour avec description_raw'
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Erreur mise à jour description_raw: {e}")
         return jsonify({
             'status': 'error',
             'error': str(e)
