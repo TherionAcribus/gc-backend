@@ -38,6 +38,14 @@ N 48° AB.CDE E 006° FG.HIJ
 ```
 - Plusieurs lettres consécutives représentant des variables
 
+### 5. Format avec Degrés/Minutes Fixes + Expressions Parenthésées
+```
+N49°12.(A/G-238)(I-135)(D/J-1) E005°59.(C-B)(H-K+1)(F-E-135)
+```
+- Degrés et minutes fixes (49°12. et 005°59.)
+- Plusieurs expressions mathématiques entre parenthèses après le point décimal
+- Support des opérations arithmétiques complexes avec constantes numériques
+
 ## Utilisation
 
 ### Via le PluginManager
@@ -140,6 +148,13 @@ result = manager.execute_plugin("formula_parser", {"text": text})
 # Détecte les opérations complexes entre parenthèses
 ```
 
+### Exemple 4 : Degrés/Minutes Fixes avec Expressions Parenthésées
+```python
+text = "N49°12.(A/G-238)(I-135)(D/J-1) E005°59.(C-B)(H-K+1)(F-E-135)"
+result = manager.execute_plugin("formula_parser", {"text": text})
+# Détecte : degrés/minutes fixes (49°12. et 005°59.) + expressions parenthésées
+```
+
 ## Intégration avec Formula Solver
 
 Ce plugin est conçu pour être utilisé avec le Formula Solver qui :
@@ -154,11 +169,13 @@ Ce plugin est conçu pour être utilisé avec le Formula Solver qui :
 - Format simple : `[NS]\s*\d{1,2}\s*°\s*\d{1,2}\.\s*[A-Z]{1,5}`
 - Avec opérations : `[NS]\s*\d{1,2}\s*°\s*[A-Z0-9()+*/\-\s]{1,15}\.\s*[A-Z0-9()+*/\-\s]{1,15}`
 - Avec espaces : `N\s+\d{1,2}°\s+\d{1,2}\.\s*[A-Z][\s\n]*[A-Z][\s\n]*[A-Z]`
+- Degrés/minutes fixes + expressions parenthésées : `[NS]\s*\d{1,2}\s*°\s*\d{1,2}\.\s*(\([A-Z0-9()+*/\-\s]+\)\s*)+`
 
 ### Est/Ouest
 - Format simple : `[EW]\s*\d{1,3}\s*°\s*\d{1,2}\.\s*[A-Z]{1,5}`
 - Avec opérations : `[EW]\s*\d{1,3}\s*°\s*[A-Z0-9()+*/\-\s]{1,15}\.\s*[A-Z0-9()+*/\-\s]{1,15}`
 - Avec parenthèses : `E\s+\d{1,3}°\s+\d{1,2}\.\s+[A-Z]\s+[A-Z]\s+\([A-Z]\s*/\s*\d+\)`
+- Degrés/minutes fixes + expressions parenthésées : `[EW]\s*\d{1,3}\s*°\s*\d{1,2}\.\s*(\([A-Z0-9()+*/\-\s]+\)\s*)+`
 
 ## Tests
 

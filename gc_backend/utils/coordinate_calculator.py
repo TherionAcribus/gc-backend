@@ -81,41 +81,49 @@ class CoordinateCalculator:
     ) -> str:
         """
         Substitue les variables par leurs valeurs dans la formule.
-        
+
         Args:
             formula: Formule avec variables (ex: "N 47° 5E.FTN")
             values: Dictionnaire lettre -> valeur
-        
+
         Returns:
             Formule avec valeurs substituées (ex: "N 47° 58.195")
-        
+
         Raises:
             ValueError: Si une variable n'a pas de valeur
         """
         result = formula
-        
+
+        # Nettoyer les formules qui commencent par "X=" où X est une direction cardinale
+        # (Cas d'erreur de génération AI)
+        for cardinal in ['N', 'S', 'E', 'W']:
+            if result.startswith(f'{cardinal}='):
+                result = result[2:]  # Supprimer "N=" etc.
+                break
+
         # Trouver toutes les lettres (variables) dans la formule
         # Pattern pour détecter : lettre isolée OU lettre après chiffre OU lettre après point
         # Ex: "5E", ".FTN", "A+B", etc.
-        # Mais exclure N/S/E/W au début suivi de ° (directions cardinales)
-        
+        # Mais exclure N/S/E/W au début suivi de ° ou espace+chiffre (directions cardinales)
+
         # D'abord, détecter toutes les lettres A-Z dans la formule
-        all_letters = set(re.findall(r'([A-Z])', formula))
-        
-        # Exclure les directions cardinales N, S, E, W si elles sont suivies de ° ou espace+chiffre
+        all_letters = set(re.findall(r'([A-Z])', result))
+
+        # Exclure les directions cardinales N, S, E, W si elles sont suivies de °, espace, ou chiffre (degrés)
         variables = set()
-        for match in re.finditer(r'([A-Z])', formula):
+        for match in re.finditer(r'([A-Z])', result):
             letter = match.group(1)
             pos = match.start()
-            
+
             # Vérifier si c'est une direction cardinale
             if letter in ['N', 'S', 'E', 'W']:
-                # Regarder ce qui suit
-                next_chars = formula[pos+1:pos+3]
-                if next_chars.startswith('°') or next_chars.startswith(' '):
-                    # C'est une direction cardinale, on skip
-                    continue
-            
+                # Regarder ce qui suit immédiatement
+                if pos + 1 < len(result):
+                    next_char = result[pos + 1]
+                    # Si suivi de °, espace, ou chiffre (début des degrés), c'est une direction cardinale
+                    if next_char in ['°', ' '] or next_char.isdigit():
+                        continue
+
             variables.add(letter)
         
         # Vérifier que toutes les variables ont une valeur

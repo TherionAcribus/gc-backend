@@ -136,10 +136,24 @@ class TestFormulaParser:
         """Test 12 : Caractères spéciaux dans la formule"""
         text = "N 48° (A+B*2).CDE E 006° (F-G/3).HIJ"
         result = self.plugin.execute({"text": text})
-        
+
         assert result["status"] == "success"
         if len(result["results"]) > 0:
             assert "*" in result["results"][0]["north"] or "/" in result["results"][0]["east"]
+
+    def test_format_degres_minutes_fixes_expressions_parenthesees(self):
+        """Test 13 : Format avec degrés/minutes fixes + expressions parenthésées"""
+        text = "N49°12.(A/G-238)(I-135)(D/J-1) E005°59.(C-B)(H-K+1)(F-E-135)"
+        result = self.plugin.execute({"text": text})
+
+        assert result["status"] == "success"
+        assert len(result["results"]) == 1
+        assert "(A/G-238)" in result["results"][0]["north"]
+        assert "(I-135)" in result["results"][0]["north"]
+        assert "(D/J-1)" in result["results"][0]["north"]
+        assert "(C-B)" in result["results"][0]["east"]
+        assert "(H-K+1)" in result["results"][0]["east"]
+        assert "(F-E-135)" in result["results"][0]["east"]
 
 
 class TestBasicClean:

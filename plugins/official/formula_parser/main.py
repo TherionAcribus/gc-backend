@@ -191,6 +191,8 @@ class FormulaParserPlugin:
             Match object ou None
         """
         patterns = [
+            # Format avec degrés/minutes fixes + expressions parenthésées : N49°12.(A/G-238)(I-135)(D/J-1)
+            r"[NS]\s*\d{1,2}\s*°\s*\d{1,2}\.\s*(\([A-Z0-9()+*/\-\s]+\)\s*)+",
             # Format classique : N48°12.345
             r"[NS]\s*\d{1,2}\s*°\s*\d{1,2}\.\s*\d{1,3}",
             # Format avec variables simples : N48°12.ABC
@@ -218,6 +220,8 @@ class FormulaParserPlugin:
             Match object ou None
         """
         patterns = [
+            # Format avec degrés/minutes fixes + expressions parenthésées : E005°59.(C-B)(H-K+1)(F-E-135)
+            r"[EW]\s*\d{1,3}\s*°\s*\d{1,2}\.\s*(\([A-Z0-9()+*/\-\s]+\)\s*)+",
             # Format classique : E006°12.345
             r"[EW]\s*\d{1,3}\s*°\s*\d{1,2}\.\s*\d{1,3}",
             # Format avec variables simples : E006°12.ABC
