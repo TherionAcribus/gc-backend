@@ -85,6 +85,9 @@ class PluginManager:
         Returns:
             List[Dict]: Liste des informations des plugins découverts
         """
+        # Recharger le schéma pour prendre en compte les modifications récentes
+        self._load_schema()
+        
         discovered_plugins = []
         discovered_paths = set()
         

@@ -1,0 +1,61 @@
+{
+  "name": "analysis_web_page",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Méta-plugin qui lance plusieurs analyses sur la page d'une cache",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Meta", "Analysis"],
+  "kinds": ["meta"],
+  "brute_force": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "input_types": {
+    "geocache_id": {
+      "type": "string",
+      "label": "ID de la cache à analyser",
+      "required": true
+    },
+    "text": {
+      "type": "textarea",
+      "label": "Texte à analyser (fallback)",
+      "required": false
+    }
+  },
+  "output_types": {
+    "combined_results": {
+      "type": "object",
+      "label": "Résultats agrégés des analyses"
+    }
+  },
+  "pipeline": [
+    {
+      "plugin_name": "coordinates_finder",
+      "description": "Recherche de coordonnées GPS dans le texte de la page"
+    },
+    {
+      "plugin_name": "color_text_detector",
+      "description": "Recherche de texte invisible (couleur = fond) dans le texte de la page"
+    },
+    {
+      "plugin_name": "formula_parser",
+      "description": "Recherche de formules du type N49°18.(B-A)(B-C-F)(D+E)"
+    },
+    {
+      "plugin_name": "html_comments_finder",
+      "description": "Recherche de commentaires HTML dans le texte de la page"
+    },
+    {
+      "plugin_name": "image_alt_text_extractor",
+      "description": "Plugin pour extraire les textes 'alt' des balises <img>."
+    },
+    {
+      "plugin_name": "additional_waypoints_analyzer",
+      "description": "Plugin pour analyser les points de passage additionnels d'une cache."
+    }
+  ]
+}
+

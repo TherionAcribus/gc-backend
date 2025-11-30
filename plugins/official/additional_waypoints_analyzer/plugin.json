@@ -1,0 +1,30 @@
+{
+  "name": "additional_waypoints_analyzer",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Analyse les tables de points de passage (Waypoints)",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": ["beautifulsoup4"],
+  "categories": ["Analysis", "Coordinates"],
+  "kinds": ["analyze"],
+  "brute_force": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "input_types": {
+    "text": {
+      "type": "textarea",
+      "label": "HTML à analyser",
+      "required": true
+    }
+  },
+  "output_types": {
+    "results": {
+      "type": "object",
+      "label": "Waypoints détectés"
+    }
+  }
+}
+

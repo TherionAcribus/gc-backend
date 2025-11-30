@@ -1,0 +1,152 @@
+import json
+import os
+from loguru import logger
+from typing import Dict, Any, List
+
+class AnalysisWebPagePlugin:
+    def __init__(self):
+        self.name = "analysis_web_page"
+        self.description = "Méta-plugin pour analyser une page de cache en lançant plusieurs plugins"
+        
+        # Chargement de la configuration pipeline
+        self.pipeline = []
+        try:
+            base_dir = os.path.dirname(__file__)
+            plugin_json_path = os.path.join(base_dir, "plugin.json")
+            if os.path.exists(plugin_json_path):
+                with open(plugin_json_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                    self.pipeline = config.get("pipeline", [])
+        except Exception as e:
+            logger.error(f"Erreur chargement pipeline analysis_web_page: {e}")
+
+    def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Exécute l'analyse complète de la page.
+        """
+        logger.info(f"START analysis_web_page inputs={inputs.keys()}")
+        
+        geocache_id = inputs.get('geocache_id')
+        text_content = inputs.get('text', '')
+        
+        page_content = text_content
+        
+        # Si un ID de géocache est fourni, on essaie de récupérer sa description
+        if geocache_id:
+            try:
+                # Import lazy pour éviter les cycles
+                from gc_backend.database import db
+                from gc_backend.geocaches.models import Geocache
+                
+                geocache = db.session.query(Geocache).get(geocache_id)
+                if geocache and geocache.description:
+                    page_content = geocache.description
+                    logger.info(f"Contenu récupéré depuis la géocache {geocache_id} ({len(page_content)} chars)")
+            except Exception as e:
+                logger.warning(f"Impossible de récupérer la géocache {geocache_id}: {e}")
+                # On continue avec text_content si disponible
+        
+        if not page_content:
+            return {
+                "status": "error",
+                "summary": "Aucun contenu à analyser",
+                "results": []
+            }
+
+        # Dictionnaire pour stocker les résultats combinés
+        combined_results = {}
+        all_results_list = []
+        
+        # Récupération du PluginManager via l'app context ou import
+        from gc_backend.blueprints.plugins import get_plugin_manager
+        plugin_manager = get_plugin_manager()
+        
+        if not plugin_manager:
+            return {
+                "status": "error", 
+                "summary": "PluginManager non disponible",
+                "results": []
+            }
+
+        # Exécution de la pipeline
+        for step in self.pipeline:
+            plugin_name = step["plugin_name"]
+            
+            # Préparation des inputs pour le sous-plugin
+            # On passe le contenu brut et l'ID si dispo
+            plugin_inputs = {
+                "text": page_content,
+                "geocache_id": geocache_id,
+                "enable_gps_detection": True,
+                "mode": "analyze" # Mode par défaut pour ces plugins
+            }
+            
+            logger.info(f"Lancement sous-plugin: {plugin_name}")
+            
+            # Exécution via PluginManager
+            try:
+                result = plugin_manager.execute_plugin(plugin_name, plugin_inputs)
+                
+                # Stockage structuré
+                combined_results[plugin_name] = result
+                
+                # Aplatissement pour la liste globale de résultats
+                if result and isinstance(result, dict) and "results" in result:
+                    for item in result["results"]:
+                        # On marque la source
+                        item["source_plugin"] = plugin_name
+                        all_results_list.append(item)
+                        
+            except Exception as e:
+                logger.error(f"Erreur exécution sous-plugin {plugin_name}: {e}")
+                combined_results[plugin_name] = {"error": str(e)}
+
+        # Logique d'agrégation et déduplication des coordonnées
+        primary_coordinates = self._aggregate_coordinates(combined_results, all_results_list)
+        
+        summary_msg = f"Analyse terminée avec {len(all_results_list)} résultats."
+        if primary_coordinates:
+            summary_msg += f" Coordonnées trouvées : {primary_coordinates.get('latitude')}, {primary_coordinates.get('longitude')}"
+
+        return {
+            "status": "success",
+            "summary": summary_msg,
+            "results": all_results_list,
+            "combined_results": combined_results,
+            "primary_coordinates": primary_coordinates
+        }
+
+    def _aggregate_coordinates(self, combined_results, all_results_list):
+        """
+        Logique de sélection des meilleures coordonnées parmi les résultats.
+        Priorité : coordinates_finder > formula_parser > autres
+        """
+        priority_order = ['coordinates_finder', 'formula_parser', 'image_alt_text_extractor', 'color_text_detector']
+        
+        # On cherche d'abord dans les résultats explicites des plugins
+        for name in priority_order:
+            if name in combined_results:
+                res = combined_results[name]
+                # Si le plugin retourne une structure avec 'primary_coordinates' ou 'decimal_latitude' dans ses résultats
+                if isinstance(res, dict):
+                    # Cas 1 : Le plugin a déjà identifié des coordonnées principales (ex: formula_parser modifié ou coordinates_finder)
+                    if 'primary_coordinates' in res and res['primary_coordinates']:
+                         return res['primary_coordinates']
+                    
+                    # Cas 2 : On regarde dans la liste des résultats individuels de ce plugin
+                    if 'results' in res and isinstance(res['results'], list):
+                        for item in res['results']:
+                            if item.get('decimal_latitude') is not None and item.get('decimal_longitude') is not None:
+                                return {
+                                    'latitude': item['decimal_latitude'],
+                                    'longitude': item['decimal_longitude']
+                                }
+        
+        return None
+
+# Instance pour le chargement
+plugin = AnalysisWebPagePlugin()
+
+def execute(inputs):
+    return plugin.execute(inputs)
+

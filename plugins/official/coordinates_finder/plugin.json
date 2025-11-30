@@ -1,0 +1,30 @@
+{
+  "name": "coordinates_finder",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Recherche de coordonnées GPS dans le texte de la page",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Analysis", "Coordinates"],
+  "kinds": ["analyze"],
+  "brute_force": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "input_types": {
+    "text": {
+      "type": "textarea",
+      "label": "Texte à analyser",
+      "required": true
+    }
+  },
+  "output_types": {
+    "results": {
+      "type": "object",
+      "label": "Coordonnées détectées"
+    }
+  }
+}
+

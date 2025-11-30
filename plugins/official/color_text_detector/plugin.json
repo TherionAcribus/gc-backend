@@ -1,0 +1,30 @@
+{
+  "name": "color_text_detector",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Recherche de texte potentiellement caché (couleur sur couleur, blanc, etc.)",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": ["beautifulsoup4"],
+  "categories": ["Analysis", "Steganography"],
+  "kinds": ["analyze"],
+  "brute_force": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "input_types": {
+    "text": {
+      "type": "textarea",
+      "label": "HTML à analyser",
+      "required": true
+    }
+  },
+  "output_types": {
+    "results": {
+      "type": "object",
+      "label": "Textes cachés détectés"
+    }
+  }
+}
+

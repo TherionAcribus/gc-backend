@@ -37,3 +37,4 @@ def downgrade():
     Supprime la colonne description_raw de la table geocache.
     """
     op.drop_column('geocache', 'description_raw')
+
