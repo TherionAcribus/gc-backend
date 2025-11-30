@@ -81,6 +81,10 @@ class AnalysisWebPagePlugin:
                 "mode": "analyze" # Mode par défaut pour ces plugins
             }
             
+            # Passer les waypoints si disponibles et si le plugin est additional_waypoints_analyzer
+            if plugin_name == "additional_waypoints_analyzer" and inputs.get("waypoints"):
+                plugin_inputs["waypoints"] = inputs.get("waypoints")
+            
             logger.info(f"Lancement sous-plugin: {plugin_name}")
             
             # Exécution via PluginManager

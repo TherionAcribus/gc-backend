@@ -17,12 +17,20 @@
     "geocache_id": {
       "type": "string",
       "label": "ID de la cache à analyser",
-      "required": true
+      "required": true,
+      "default_value_source": "geocache_id"
     },
     "text": {
       "type": "textarea",
       "label": "Texte à analyser (fallback)",
-      "required": false
+      "required": false,
+      "default_value_source": "geocache_description"
+    },
+    "waypoints": {
+      "type": "array",
+      "label": "Waypoints de la cache",
+      "required": false,
+      "hidden": true
     }
   },
   "output_types": {

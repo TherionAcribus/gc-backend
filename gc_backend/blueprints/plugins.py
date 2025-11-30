@@ -661,6 +661,29 @@ def _generate_plugin_interface_html(plugin_info: Dict[str, Any]) -> str:
             </form>
         </div>
     </div>
+    <script>
+        // Pré-remplissage automatique des champs à partir des paramètres d'URL (ex: ?text=...)
+        document.addEventListener('DOMContentLoaded', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            
+            // Pour chaque champ du formulaire
+            const form = document.getElementById('plugin-form');
+            if (form) {
+                Array.from(form.elements).forEach(element => {
+                    if (element.name && urlParams.has(element.name)) {
+                        const paramValue = urlParams.get(element.name);
+                        
+                        // Gestion spécifique selon le type
+                        if (element.type === 'checkbox') {
+                            element.checked = paramValue === 'true' || paramValue === '1' || paramValue === 'on';
+                        } else {
+                            element.value = paramValue;
+                        }
+                    }
+                });
+            }
+        });
+    </script>
 </body>
 </html>
     '''

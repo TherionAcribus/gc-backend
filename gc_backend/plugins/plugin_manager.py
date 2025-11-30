@@ -734,6 +734,25 @@ class PluginManager:
         plugin = self.get_plugin(plugin_name, force_reload=True)
         
         return plugin is not None
+
+    def reload_all_plugins(self) -> int:
+        """
+        Recharge tous les plugins actuellement chargés en mémoire.
+        
+        Returns:
+            int: Nombre de plugins rechargés avec succès
+        """
+        plugin_names = list(self.loaded_plugins.keys())
+        success_count = 0
+        
+        logger.info(f"Début du rechargement de {len(plugin_names)} plugins")
+        
+        for name in plugin_names:
+            if self.reload_plugin(name):
+                success_count += 1
+                
+        logger.info(f"Rechargement terminé: {success_count}/{len(plugin_names)} plugins rechargés")
+        return success_count
     
     def _get_timeout_from_metadata(self, plugin_record: Plugin) -> int:
         """
