@@ -264,23 +264,30 @@ class BatchPluginTask:
         
         if self.detect_coordinates and plugin_result.get('results'):
             for item in plugin_result['results']:
-                if item.get('text_output'):
+                text_output = item.get('text_output')
+                if text_output:
                     try:
-                        # Utiliser le service de détection de coordonnées via l'API
-                        from flask import request
-                        with current_app.test_request_context('/api/detect_coordinates', method='POST', json={'text': item['text_output']}):
-                            response = current_app.full_dispatch_request()
-                            if response.status_code == 200:
-                                coords = response.get_json()
-                                if coords.get('exist'):
-                                    processed['coordinates'] = {
-                                        'latitude': coords.get('decimal_latitude', 0),
-                                        'longitude': coords.get('decimal_longitude', 0),
-                                        'formatted': coords.get('ddm', '')
-                                    }
-                                    break
+                        # Utiliser directement la fonction de détection (pas l'API)
+                        from gc_backend.blueprints.coordinates import detect_gps_coordinates
+                        
+                        logger.info(f"[Batch] Détection de coordonnées dans: {text_output[:100]}...")
+                        
+                        coords = detect_gps_coordinates(text_output, include_numeric_only=False)
+                        
+                        if coords.get('exist'):
+                            logger.info(f"[Batch] Coordonnées trouvées: {coords.get('ddm')}")
+                            processed['coordinates'] = {
+                                'latitude': coords.get('decimal_latitude', 0),
+                                'longitude': coords.get('decimal_longitude', 0),
+                                'formatted': coords.get('ddm', '')
+                            }
+                            break
+                        else:
+                            logger.info(f"[Batch] Aucune coordonnée détectée dans ce résultat")
                     except Exception as e:
                         logger.warning(f"Error detecting coordinates: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
         
         return processed
     
