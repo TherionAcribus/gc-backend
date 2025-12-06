@@ -27,6 +27,8 @@ def get_geocaches_for_zone(zone_id: int):
                 'id': gc.id,
                 'gc_code': gc.gc_code,
                 'name': gc.name,
+                'description': gc.description_raw,
+                'hint': gc.hints,
                 'owner': gc.owner,
                 'cache_type': gc.type,  # Le frontend attend 'cache_type'
                 'difficulty': gc.difficulty,
@@ -38,6 +40,7 @@ def get_geocaches_for_zone(zone_id: int):
                 'hidden_date': gc.placed_at.isoformat() if gc.placed_at else None,
                 'latitude': gc.latitude,
                 'longitude': gc.longitude,
+                'coordinates_raw': gc.coordinates_raw,
                 'is_corrected': gc.is_corrected or False,
                 'original_latitude': gc.original_latitude,
                 'original_longitude': gc.original_longitude,

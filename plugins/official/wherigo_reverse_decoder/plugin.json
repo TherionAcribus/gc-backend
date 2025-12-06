@@ -30,7 +30,8 @@
       "type": "textarea",
       "label": "Texte contenant les nombres",
       "placeholder": "Collez les trois nombres de 6 chiffres (e.g. 123456 654321 987654)",
-      "required": true
+      "required": true,
+      "default_value_source": "geocache_description"
     },
     "strict": {
       "type": "checkbox",
@@ -41,7 +42,7 @@
     "embedded": {
       "type": "checkbox",
       "label": "Code intégré dans du texte",
-      "default": false,
+      "default": true,
       "description": "Permet de détecter les codes Wherigo Reverse enfouis dans un texte plus long."
     }
   },

@@ -11,6 +11,8 @@ import requests
 from bs4 import BeautifulSoup
 import browser_cookie3
 
+from ..utils.html_cleaner import html_to_text_with_linebreaks
+
 
 logger = logging.getLogger(__name__)
 
@@ -474,8 +476,8 @@ class GeocachingScraper:
         if desc_el:
             try:
                 description_html = str(desc_el)
-                # Extraire le texte brut sans HTML
-                description_raw = desc_el.get_text(strip=True)
+                # Extraire le texte brut avec préservation des sauts de ligne
+                description_raw = html_to_text_with_linebreaks(description_html)
             except Exception:
                 description_html = desc_el.get_text(strip=True)
                 description_raw = description_html

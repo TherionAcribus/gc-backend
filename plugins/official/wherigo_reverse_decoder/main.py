@@ -290,4 +290,5 @@ plugin = WherigoReverseDecoderPlugin()
 
 def execute(inputs: Dict[str, Any]) -> Dict[str, Any]:
     """Compatibilité pour l'exécution modulaire du plugin."""
+    print("inputs", inputs)
     return plugin.execute(inputs)
