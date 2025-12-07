@@ -181,12 +181,20 @@ def sync_note_to_geocaching(note_id: int):
         if not geocache.gc_code:
             return jsonify({"error": "Geocache has no GC code"}), 400
 
+        # Permettre au frontend de fournir un contenu final (remplacer/ajouter) pour la note GC.com
+        data = request.get_json(silent=True) or {}
+        override_content = data.get("content") if isinstance(data, dict) else None
+        if isinstance(override_content, str) and override_content.strip():
+            payload_content = override_content
+        else:
+            payload_content = note.content or ""
+
         client = GeocachingPersonalNotesClient()
-        ok = client.update_personal_note(geocache.gc_code, note.content or "")
+        ok = client.update_personal_note(geocache.gc_code, payload_content)
         if not ok:
             return jsonify({"error": "Failed to update personal note on Geocaching.com"}), 502
 
-        geocache.gc_personal_note = note.content
+        geocache.gc_personal_note = payload_content
         geocache.gc_personal_note_last_pushed_at = datetime.now(timezone.utc)
         db.session.commit()
 
