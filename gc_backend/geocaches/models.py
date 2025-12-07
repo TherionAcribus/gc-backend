@@ -49,6 +49,7 @@ class Geocache(db.Model):
 
     waypoints = db.relationship('GeocacheWaypoint', back_populates='geocache', cascade='all, delete-orphan', lazy=True)
     checkers = db.relationship('GeocacheChecker', back_populates='geocache', cascade='all, delete-orphan', lazy=True)
+    logs = db.relationship('GeocacheLog', back_populates='geocache', cascade='all, delete-orphan', lazy=True, order_by='desc(GeocacheLog.date)')
 
     def to_list_item(self) -> dict:
         return {
@@ -142,3 +143,101 @@ class GeocacheChecker(db.Model):
         }
 
 
+class GeocacheLog(db.Model):
+    """
+    Modèle représentant un log (commentaire) laissé sur une géocache.
+    Les logs sont récupérés depuis Geocaching.com et stockés localement.
+    """
+    __tablename__ = 'geocache_log'
+
+    id = db.Column(db.Integer, primary_key=True)
+    geocache_id = db.Column(db.Integer, db.ForeignKey('geocache.id'), nullable=False, index=True)
+    
+    # ID externe du log sur Geocaching.com (pour éviter les doublons)
+    external_id = db.Column(db.String(50), index=True)
+    
+    # Auteur du log
+    author = db.Column(db.String(255))
+    author_guid = db.Column(db.String(100))  # GUID de l'auteur sur Geocaching.com
+    
+    # Contenu du log
+    text = db.Column(db.Text)
+    date = db.Column(db.DateTime, index=True)
+    
+    # Type de log normalisé : Found, Did Not Find, Note, Owner Maintenance, etc.
+    log_type = db.Column(db.String(50), index=True)
+    
+    # Log marqué comme favori par l'auteur
+    is_favorite = db.Column(db.Boolean, default=False)
+    
+    # Métadonnées
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    geocache = db.relationship('Geocache', back_populates='logs')
+
+    __table_args__ = (
+        db.UniqueConstraint('geocache_id', 'external_id', name='unique_log_per_geocache'),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'external_id': self.external_id,
+            'author': self.author,
+            'author_guid': self.author_guid,
+            'text': self.text,
+            'date': self.date.isoformat() if self.date else None,
+            'log_type': self.log_type,
+            'is_favorite': self.is_favorite,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+    @staticmethod
+    def normalize_log_type(log_type: str | None) -> str:
+        """
+        Normalise le type de log pour avoir une cohérence dans la base de données.
+        
+        Args:
+            log_type: Type de log brut depuis l'API Geocaching
+            
+        Returns:
+            Type de log normalisé
+        """
+        if not log_type:
+            return 'Other'
+        
+        log_type_lower = log_type.lower().strip()
+        
+        # Mapping des types de logs courants
+        type_mapping = {
+            'found it': 'Found',
+            'found': 'Found',
+            "didn't find it": 'Did Not Find',
+            'did not find': 'Did Not Find',
+            'dnf': 'Did Not Find',
+            'write note': 'Note',
+            'note': 'Note',
+            'webcam photo taken': 'Webcam',
+            'webcam': 'Webcam',
+            'owner maintenance': 'Owner Maintenance',
+            'maintenance': 'Owner Maintenance',
+            'needs maintenance': 'Needs Maintenance',
+            'needs archived': 'Needs Archived',
+            'will attend': 'Will Attend',
+            'attended': 'Attended',
+            'temporarily disable listing': 'Temporarily Disabled',
+            'enable listing': 'Enabled',
+            'publish listing': 'Published',
+            'retract listing': 'Retracted',
+            'archive': 'Archived',
+            'unarchive': 'Unarchived',
+            'reviewer note': 'Reviewer Note',
+            'post reviewer note': 'Reviewer Note',
+        }
+        
+        if log_type_lower in type_mapping:
+            return type_mapping[log_type_lower]
+        
+        # Par défaut, capitaliser la première lettre
+        return log_type.strip().title()
