@@ -106,3 +106,4 @@ plugin = ColorTextDetectorPlugin()
 def execute(inputs):
     return plugin.execute(inputs)
 
+

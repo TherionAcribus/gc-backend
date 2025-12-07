@@ -12,8 +12,8 @@ def init_db(app):
 
     with app.app_context():
         from .models import Zone  # noqa
-        # Importer le modèle Geocache pour la création de table
-        from .geocaches.models import Geocache, GeocacheLog  # noqa: F401
+        # Importer les modèles Geocache, GeocacheLog et Notes pour la création de table
+        from .geocaches.models import Geocache, GeocacheLog, Note, GeocacheNote  # noqa: F401
         # Importer le modèle Plugin pour la création de table
         from .plugins.models import Plugin  # noqa: F401
 
@@ -44,6 +44,9 @@ def init_db(app):
                 'found': 'BOOLEAN',
                 'found_date': 'DATETIME',
                 'solved': 'VARCHAR(20)',
+                'gc_personal_note': 'TEXT',
+                'gc_personal_note_synced_at': 'DATETIME',
+                'gc_personal_note_last_pushed_at': 'DATETIME',
             }
 
             for col, col_type in to_add.items():

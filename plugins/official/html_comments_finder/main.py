@@ -44,3 +44,4 @@ plugin = HtmlCommentsFinderPlugin()
 def execute(inputs):
     return plugin.execute(inputs)
 
+

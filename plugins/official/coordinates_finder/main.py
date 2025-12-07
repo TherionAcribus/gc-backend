@@ -73,3 +73,4 @@ plugin = CoordinatesFinderPlugin()
 def execute(inputs):
     return plugin.execute(inputs)
 
+

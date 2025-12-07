@@ -52,3 +52,4 @@ plugin = ImageAltTextExtractorPlugin()
 def execute(inputs):
     return plugin.execute(inputs)
 
+

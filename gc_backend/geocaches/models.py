@@ -40,6 +40,10 @@ class Geocache(db.Model):
     found_date = db.Column(db.DateTime)
     solved = db.Column(db.String(20), default='not_solved')  # not_solved, in_progress, solved
 
+    gc_personal_note = db.Column(db.Text)
+    gc_personal_note_synced_at = db.Column(db.DateTime)
+    gc_personal_note_last_pushed_at = db.Column(db.DateTime)
+
     zone_id = db.Column(db.Integer, db.ForeignKey('zone.id'), nullable=False)
     zone = db.relationship('Zone', backref=db.backref('geocaches', lazy=True))
 
@@ -50,6 +54,7 @@ class Geocache(db.Model):
     waypoints = db.relationship('GeocacheWaypoint', back_populates='geocache', cascade='all, delete-orphan', lazy=True)
     checkers = db.relationship('GeocacheChecker', back_populates='geocache', cascade='all, delete-orphan', lazy=True)
     logs = db.relationship('GeocacheLog', back_populates='geocache', cascade='all, delete-orphan', lazy=True, order_by='desc(GeocacheLog.date)')
+    notes = db.relationship('Note', secondary='geocache_note', back_populates='geocaches', lazy=True)
 
     def to_list_item(self) -> dict:
         return {
@@ -92,6 +97,9 @@ class Geocache(db.Model):
             'solved': self.solved,
             'waypoints': [w.to_dict() for w in (self.waypoints or [])],
             'checkers': [c.to_dict() for c in (self.checkers or [])],
+            'gc_personal_note': self.gc_personal_note,
+            'gc_personal_note_synced_at': self.gc_personal_note_synced_at.isoformat() if self.gc_personal_note_synced_at else None,
+            'gc_personal_note_last_pushed_at': self.gc_personal_note_last_pushed_at.isoformat() if self.gc_personal_note_last_pushed_at else None,
         }
 
 
@@ -241,3 +249,37 @@ class GeocacheLog(db.Model):
         
         # Par défaut, capitaliser la première lettre
         return log_type.strip().title()
+
+
+class Note(db.Model):
+    __tablename__ = 'note'
+
+    id = db.Column(db.Integer, primary_key=True)
+    content = db.Column(db.Text, nullable=False)
+    note_type = db.Column(db.String(50), nullable=False)
+    source = db.Column(db.String(50), nullable=False, default='user')
+    source_plugin = db.Column(db.String(100))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    geocaches = db.relationship('Geocache', secondary='geocache_note', back_populates='notes')
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'content': self.content,
+            'note_type': self.note_type,
+            'source': self.source,
+            'source_plugin': self.source_plugin,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class GeocacheNote(db.Model):
+    __tablename__ = 'geocache_note'
+
+    geocache_id = db.Column(db.Integer, db.ForeignKey('geocache.id'), primary_key=True)
+    note_id = db.Column(db.Integer, db.ForeignKey('note.id'), primary_key=True)
+    added_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
