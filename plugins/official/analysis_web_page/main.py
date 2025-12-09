@@ -25,25 +25,52 @@ class AnalysisWebPagePlugin:
         Exécute l'analyse complète de la page.
         """
         logger.info(f"START analysis_web_page inputs={inputs.keys()}")
-        
-        geocache_id = inputs.get('geocache_id')
+
+        geocache_id_raw = inputs.get('geocache_id')
         text_content = inputs.get('text', '')
-        
+
+        # Par défaut, on utilise le texte fourni (peut être vide)
         page_content = text_content
-        
-        # Si un ID de géocache est fourni, on essaie de récupérer sa description
-        if geocache_id:
+
+        # Si un identifiant de géocache est fourni, on essaie de récupérer son contenu
+        if geocache_id_raw:
             try:
                 # Import lazy pour éviter les cycles
                 from gc_backend.database import db
                 from gc_backend.geocaches.models import Geocache
-                
-                geocache = db.session.query(Geocache).get(geocache_id)
-                if geocache and geocache.description:
-                    page_content = geocache.description
-                    logger.info(f"Contenu récupéré depuis la géocache {geocache_id} ({len(page_content)} chars)")
+
+                geocache_id_str = str(geocache_id_raw).strip()
+
+                # 1) Tentative par ID numérique (clé primaire)
+                geocache = None
+                try:
+                    geocache_id_int = int(geocache_id_str)
+                except (TypeError, ValueError):
+                    geocache_id_int = None
+
+                if geocache_id_int is not None:
+                    geocache = db.session.query(Geocache).get(geocache_id_int)
+
+                # 2) Si introuvable ou non numérique, tentative par code GC (gc_code)
+                if geocache is None:
+                    geocache = (
+                        db.session.query(Geocache)
+                        .filter(Geocache.gc_code == geocache_id_str)
+                        .first()
+                    )
+
+                if geocache:
+                    # On préfère l'HTML complet si disponible, sinon la description texte
+                    content = getattr(geocache, 'description_html', None) or getattr(geocache, 'description', None)
+                    if content:
+                        page_content = content
+                        logger.info(
+                            "Contenu récupéré depuis la géocache %s (%d chars)",
+                            geocache_id_str,
+                            len(page_content),
+                        )
             except Exception as e:
-                logger.warning(f"Impossible de récupérer la géocache {geocache_id}: {e}")
+                logger.warning(f"Impossible de récupérer la géocache {geocache_id_raw}: {e}")
                 # On continue avec text_content si disponible
         
         if not page_content:
@@ -73,17 +100,21 @@ class AnalysisWebPagePlugin:
             plugin_name = step["plugin_name"]
             
             # Préparation des inputs pour le sous-plugin
-            # On passe le contenu brut et l'ID si dispo
+            # On passe le contenu brut et l'identifiant de géocache (brut) si dispo
             plugin_inputs = {
                 "text": page_content,
-                "geocache_id": geocache_id,
+                "geocache_id": geocache_id_raw,
                 "enable_gps_detection": True,
-                "mode": "analyze" # Mode par défaut pour ces plugins
+                "mode": "analyze"  # Mode par défaut pour ces plugins
             }
             
             # Passer les waypoints si disponibles et si le plugin est additional_waypoints_analyzer
             if plugin_name == "additional_waypoints_analyzer" and inputs.get("waypoints"):
                 plugin_inputs["waypoints"] = inputs.get("waypoints")
+
+            # Passer explicitement les images si disponibles pour le plugin de détection de QR codes
+            if plugin_name == "qr_code_detector" and inputs.get("images"):
+                plugin_inputs["images"] = inputs.get("images")
             
             logger.info(f"Lancement sous-plugin: {plugin_name}")
             

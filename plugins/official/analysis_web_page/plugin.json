@@ -8,7 +8,7 @@
   "entry_point": "main.py",
   "dependencies": [],
   "categories": ["Meta", "Analysis"],
-  "kinds": ["meta"],
+  "kinds": ["meta", "image"],
   "brute_force": false,
   "heavy_cpu": false,
   "needs_network": false,
@@ -29,6 +29,12 @@
     "waypoints": {
       "type": "array",
       "label": "Waypoints de la cache",
+      "required": false,
+      "hidden": true
+    },
+    "images": {
+      "type": "array",
+      "label": "Images de la cache",
       "required": false,
       "hidden": true
     }
@@ -59,6 +65,10 @@
     {
       "plugin_name": "image_alt_text_extractor",
       "description": "Plugin pour extraire les textes 'alt' des balises <img>."
+    },
+    {
+      "plugin_name": "qr_code_detector",
+      "description": "Plugin pour détecter et décoder les QR codes dans les images de la cache."
     },
     {
       "plugin_name": "additional_waypoints_analyzer",

@@ -1,0 +1,44 @@
+{
+  "name": "qr_code_detector",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Détecte et décode les QR codes dans les images d'une géocache",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": ["pyzbar", "Pillow", "requests"],
+  "categories": ["Analysis", "Image"],
+  "kinds": ["image", "analyze"],
+  "brute_force": false,
+  "heavy_cpu": true,
+  "needs_network": true,
+  "needs_filesystem": false,
+  "input_types": {
+    "geocache_id": {
+      "type": "string",
+      "label": "ID de la géocache à analyser",
+      "required": true,
+      "default_value_source": "geocache_id"
+    },
+    "text": {
+      "type": "textarea",
+      "label": "HTML de la page (optionnel)",
+      "required": false,
+      "default_value_source": "geocache_description"
+    }
+  },
+  "output_types": {
+    "results": {
+      "type": "object",
+      "label": "Résultats standardisés (findings)"
+    },
+    "qr_codes": {
+      "type": "array",
+      "label": "QR codes décodés"
+    },
+    "images_analyzed": {
+      "type": "integer",
+      "label": "Nombre d'images analysées"
+    }
+  }
+}
