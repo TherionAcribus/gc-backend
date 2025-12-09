@@ -1290,6 +1290,57 @@ def _detect_compact_coordinates(text: str) -> Optional[Dict[str, Optional[str]]]
     return None
 
 # ------------------------------------------------------------------------------
+# Détection du format DDM avec points à la place du symbole °
+# Exemple : "N50.02.117 e004.52.677"
+# ------------------------------------------------------------------------------
+
+def _detect_dmm_dot_separator(text: str) -> Optional[Dict[str, Optional[str]]]:
+    """
+    Détecte les coordonnées DDM où les séparateurs de degrés et minutes sont des points :
+      - N50.02.117 e004.52.677
+    Les lettres cardinales peuvent être en majuscule ou minuscule.
+    """
+    print(f"[DEBUG] _detect_dmm_dot_separator: Analyse du texte: '{text[:100]}...' (tronqué)")
+
+    pattern = (
+        r'([ns])\s*(\d{1,2})\.(\d{2})\.(\d{3})\s*'  # Latitude : dir, deg, minutes, décimales
+        r'([ew])\s*(\d{1,3})\.(\d{2})\.(\d{3})'     # Longitude : dir, deg, minutes, décimales
+    )
+
+    print(f"[DEBUG] _detect_dmm_dot_separator: Regex utilisée: {pattern}")
+    match = re.search(pattern, text, re.IGNORECASE)
+    if match:
+        print(f"[DEBUG] _detect_dmm_dot_separator: Match trouvé! Groupes: {match.groups()}")
+        lat_dir, lat_deg, lat_min, lat_dec, lon_dir, lon_deg, lon_min, lon_dec = match.groups()
+
+        # Normaliser les directions
+        lat_dir = lat_dir.upper()
+        lon_dir = lon_dir.upper()
+
+        try:
+            lat_min_f = float(f"{lat_min}.{lat_dec}")
+            lon_min_f = float(f"{lon_min}.{lon_dec}")
+            if not _is_valid_degrees_minutes(int(lat_deg), lat_min_f, int(lon_deg), lon_min_f):
+                print("[DEBUG] _detect_dmm_dot_separator: Bornes invalides, rejet")
+                return None
+        except Exception:
+            return None
+
+        ddm_lat = f"{lat_dir} {lat_deg.zfill(2)}° {lat_min}.{lat_dec}'"
+        ddm_lon = f"{lon_dir} {lon_deg.zfill(3)}° {lon_min}.{lon_dec}'"
+
+        print(f"[DEBUG] _detect_dmm_dot_separator: Coordonnées formatées: {ddm_lat} {ddm_lon}")
+        return {
+            "exist": True,
+            "ddm_lat": ddm_lat,
+            "ddm_lon": ddm_lon,
+            "ddm": f"{ddm_lat} {ddm_lon}"
+        }
+
+    print("[DEBUG] _detect_dmm_dot_separator: Aucun match trouvé")
+    return None
+
+# ------------------------------------------------------------------------------
 # Fonction principale de détection multi-format
 # ------------------------------------------------------------------------------
 
@@ -1321,6 +1372,7 @@ def detect_gps_coordinates(text: str, include_numeric_only: bool = False, origin
     confidence_map = {
         _detect_word_coordinates:            1.00,
         _detect_geocaching_standard_format:  0.96,  # Nouvelle fonction avec haute priorité
+        _detect_dmm_dot_separator:           0.95,
         _detect_compact_coordinates:         0.95,
         _detect_dmm_coordinates:             0.95,
         _detect_dms_coordinates:             0.92,
