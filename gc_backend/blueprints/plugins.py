@@ -1141,12 +1141,15 @@ def batch_execute_plugins():
         for gc_id in geocache_ids:
             geocache = Geocache.query.get(gc_id)
             if geocache:
+                decoded_hint = geocache.hints_decoded
+                if decoded_hint is None and geocache.hints:
+                    decoded_hint = Geocache.decode_hint_rot13(geocache.hints)
                 geocaches.append({
                     'id': geocache.id,
                     'gc_code': geocache.gc_code,
                     'name': geocache.name,
                     'description': geocache.description_raw,
-                    'hint': geocache.hints,
+                    'hint': decoded_hint,
                     'difficulty': geocache.difficulty,
                     'terrain': geocache.terrain,
                     'images': geocache.images or [],

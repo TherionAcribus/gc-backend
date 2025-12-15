@@ -37,6 +37,7 @@ def init_db(app):
                 'original_coordinates_raw': 'TEXT',
                 'description_html': 'TEXT',
                 'hints': 'TEXT',
+                'hints_decoded': 'TEXT',
                 'attributes': 'JSON',
                 'favorites_count': 'INTEGER',
                 'logs_count': 'INTEGER',

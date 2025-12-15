@@ -84,6 +84,7 @@ class GeocacheImporter:
         g.description_html = getattr(s, 'description_html', None)
         g.description_raw = getattr(s, 'description_raw', None)
         g.hints = getattr(s, 'hints', None)
+        g.hints_decoded = Geocache.decode_hint_rot13(g.hints) if g.hints else None
         g.attributes = getattr(s, 'attributes', None)
         g.favorites_count = getattr(s, 'favorites_count', None)
         g.logs_count = getattr(s, 'logs_count', None)

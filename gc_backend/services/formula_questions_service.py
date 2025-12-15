@@ -200,7 +200,11 @@ class FormulaQuestionsService:
                     content_parts.append("\n")
 
             # Ajouter les hints / indices
-            hint = getattr(geocache, 'hint', None) or getattr(geocache, 'hints', None)
+            hint = (
+                getattr(geocache, 'hints_decoded', None)
+                or getattr(geocache, 'hint', None)
+                or getattr(geocache, 'hints', None)
+            )
             if hint:
                 content_parts.append("=== INDICE ===\n")
                 cleaned_hint = self._clean_html(hint)

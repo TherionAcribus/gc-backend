@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import codecs
 from datetime import datetime, timezone
 
 from ..database import db
@@ -32,6 +33,7 @@ class Geocache(db.Model):
     description_html = db.Column(db.Text)
     description_raw = db.Column(db.Text)
     hints = db.Column(db.Text)
+    hints_decoded = db.Column(db.Text)
     attributes = db.Column(db.JSON)
     favorites_count = db.Column(db.Integer)
     logs_count = db.Column(db.Integer)
@@ -63,7 +65,14 @@ class Geocache(db.Model):
             'gc_code': self.gc_code,
         }
 
+    @staticmethod
+    def decode_hint_rot13(value: str) -> str:
+        return codecs.decode(value, 'rot_13')
+
     def to_dict(self) -> dict:
+        decoded_hints = self.hints_decoded
+        if decoded_hints is None and self.hints:
+            decoded_hints = self.decode_hint_rot13(self.hints)
         return {
             'id': self.id,
             'gc_code': self.gc_code,
@@ -88,6 +97,7 @@ class Geocache(db.Model):
             'description_html': self.description_html,
             'description_raw': self.description_raw,
             'hints': self.hints,
+            'hints_decoded': decoded_hints,
             'attributes': self.attributes,
             'favorites_count': self.favorites_count,
             'logs_count': self.logs_count,
