@@ -327,37 +327,39 @@ class CertitudeAdapter:
             'input:not([type])',
         ]
 
-        frames: list[Any] = []
-        try:
-            frames = list(page.frames)
-        except Exception:
-            frames = [page.main_frame]
+        def _find_input() -> tuple[Any | None, Any | None]:
+            frames: list[Any] = []
+            try:
+                frames = list(page.frames)
+            except Exception:
+                frames = [page.main_frame]
 
-        input_el = None
-        input_frame = None
-        for frame in frames:
-            for selector in input_locators:
-                loc = frame.locator(selector)
-                try:
-                    count = loc.count()
-                except Exception:
-                    continue
-                if count <= 0:
-                    continue
-                limit = min(count, 10)
-                for idx in range(limit):
-                    candidate_loc = loc.nth(idx)
+            for frame in frames:
+                for selector in input_locators:
+                    loc = frame.locator(selector)
                     try:
-                        if candidate_loc.is_visible():
-                            input_el = candidate_loc
-                            input_frame = frame
-                            break
+                        count = loc.count()
                     except Exception:
                         continue
-                if input_el is not None:
-                    break
-            if input_el is not None:
-                break
+                    if count <= 0:
+                        continue
+                    limit = min(count, 10)
+                    for idx in range(limit):
+                        candidate_loc = loc.nth(idx)
+                        try:
+                            if candidate_loc.is_visible():
+                                return candidate_loc, frame
+                        except Exception:
+                            continue
+            return None, None
+
+        input_el, input_frame = _find_input()
+        if input_el is None:
+            deadline_find = time.time() + min(15, max(1, int(timeout_sec)))
+            while time.time() < deadline_find and input_el is None:
+                page.wait_for_timeout(1000)
+                initial_text = _collect_text() or initial_text
+                input_el, input_frame = _find_input()
 
         if input_el is None:
             return CheckerRunResult(
