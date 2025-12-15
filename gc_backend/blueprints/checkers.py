@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import time
 import shutil
@@ -16,6 +18,17 @@ from ..utils.preferences import get_value_or_default
 
 bp = Blueprint('checkers', __name__)
 logger = logging.getLogger(__name__)
+
+
+_PLAYWRIGHT_EXECUTOR = ThreadPoolExecutor(max_workers=1)
+
+
+def _run_playwright_blocking(call):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return call()
+    return _PLAYWRIGHT_EXECUTOR.submit(call).result()
 
 
 def _is_checkers_enabled() -> bool:
@@ -57,7 +70,7 @@ def run_checker():
     runner = _build_runner()
 
     try:
-        result = runner.run(url=url, input_payload=input_payload)
+        result = _run_playwright_blocking(lambda: runner.run(url=url, input_payload=input_payload))
         return jsonify({'status': 'success', 'result': result})
     except ValueError as exc:
         return jsonify({'status': 'error', 'error': str(exc)}), 400
@@ -89,7 +102,9 @@ def run_checker_interactive():
             timeout_sec,
             sorted(list(input_payload.keys())) if isinstance(input_payload, dict) else None,
         )
-        result = runner.run_interactive(url=url, input_payload=input_payload, timeout_sec=timeout_sec)
+        result = _run_playwright_blocking(
+            lambda: runner.run_interactive(url=url, input_payload=input_payload, timeout_sec=timeout_sec)
+        )
         duration_ms = int((time.perf_counter() - started_at) * 1000)
         logger.info(
             'Checker run-interactive done url=%s duration_ms=%s status=%s',
@@ -135,7 +150,7 @@ def ensure_session():
         return jsonify({'status': 'error', 'error': f'Unsupported provider: {provider}'}), 400
 
     try:
-        logged_in = call()
+        logged_in = _run_playwright_blocking(call)
         return jsonify({'status': 'success', 'provider': provider, 'logged_in': logged_in})
     except Exception as exc:
         logger.error('Ensure session failed: %s', exc, exc_info=True)
@@ -168,7 +183,7 @@ def login_session():
         return jsonify({'status': 'error', 'error': f'Unsupported provider: {provider}'}), 400
 
     try:
-        logged_in = call()
+        logged_in = _run_playwright_blocking(call)
         return jsonify({'status': 'success', 'provider': provider, 'logged_in': logged_in})
     except Exception as exc:
         logger.error('Login session failed: %s', exc, exc_info=True)

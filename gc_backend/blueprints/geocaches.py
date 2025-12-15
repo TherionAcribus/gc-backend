@@ -74,6 +74,39 @@ def get_geocache_details(geocache_id: int):
         return jsonify({'error': str(e)}), 500
 
 
+@bp.get('/api/geocaches/by-code/<string:gc_code>')
+def get_geocache_by_code(gc_code: str):
+    """Récupère les détails complets d'une géocache via son GC code."""
+    try:
+        code = (gc_code or '').strip().upper()
+        if not code:
+            return jsonify({'error': 'Missing gc_code'}), 400
+
+        zone_id_raw = request.args.get('zone_id')
+        zone_id = int(zone_id_raw) if zone_id_raw is not None and str(zone_id_raw).strip() else None
+
+        query = Geocache.query.filter(Geocache.gc_code == code)
+        if zone_id is not None:
+            query = query.filter(Geocache.zone_id == zone_id)
+
+        matches = query.all()
+        if not matches:
+            return jsonify({'error': 'Geocache not found'}), 404
+
+        if len(matches) > 1 and zone_id is None:
+            return jsonify({'error': 'Multiple geocaches found for this gc_code. Provide zone_id.'}), 409
+
+        geocache = matches[0]
+        result = geocache.to_dict()
+        logger.info(f"Returning details for geocache {geocache.gc_code} (id={geocache.id}) via gc_code")
+        return jsonify(result)
+    except ValueError:
+        return jsonify({'error': 'Invalid zone_id'}), 400
+    except Exception as e:
+        logger.error(f"Error fetching geocache by gc_code {gc_code}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @bp.get('/api/geocaches/<int:geocache_id>/nearby')
 def get_nearby_geocaches(geocache_id: int):
     """Récupère les géocaches dans un rayon autour d'une géocache spécifique."""
@@ -964,58 +997,6 @@ def reset_coordinates(geocache_id: int):
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error resetting coordinates: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
-
-
-@bp.get('/api/geocaches/by-code/<gc_code>')
-def get_geocache_by_code(gc_code: str):
-    """Récupère une géocache par son code GC."""
-    try:
-        # Rechercher la géocache (peut exister dans plusieurs zones)
-        geocaches = Geocache.query.filter_by(gc_code=gc_code.upper()).all()
-
-        if not geocaches:
-            return jsonify({'error': 'Geocache not found'}), 404
-
-        # Si plusieurs géocaches avec le même code, prendre la première
-        # TODO: gérer le cas multi-zone si nécessaire
-        geocache = geocaches[0]
-
-        if len(geocaches) > 1:
-            logger.warning(f"Multiple geocaches found for code {gc_code}, returning first one (id={geocache.id})")
-
-        # Parser les coordonnées pour les retourner séparément
-        gc_lat = None
-        gc_lon = None
-
-        if geocache.coordinates_raw:
-            import re
-            # Parser le format "N 48° 38.204 E 006° 07.000"
-            match = re.match(r'^([NS])\s*(\d+)°\s*([\d.]+)\s+([EW])\s*(\d+)°\s*([\d.]+)', geocache.coordinates_raw)
-            if match:
-                lat_dir, lat_deg, lat_min, lon_dir, lon_deg, lon_min = match.groups()
-                gc_lat = f"{lat_dir} {lat_deg}° {lat_min}"
-                gc_lon = f"{lon_dir} {lon_deg}° {lon_min}"
-            else:
-                # Fallback: retourner les coordonnées brutes dans gc_lat
-                gc_lat = geocache.coordinates_raw
-                gc_lon = None
-
-        # Adapter le format pour le frontend (AssociatedGeocache)
-        result = {
-            'id': geocache.id,  # Pour le frontend: id
-            'database_id': geocache.id,  # Pour le frontend: databaseId
-            'gc_code': geocache.gc_code,
-            'name': geocache.name,
-            'gc_lat': gc_lat,  # Latitude au format Geocaching
-            'gc_lon': gc_lon,  # Longitude au format Geocaching
-        }
-
-        logger.info(f"Found geocache {gc_code} (id={geocache.id})")
-        return jsonify(result)
-
-    except Exception as e:
-        logger.error(f"Error fetching geocache by code {gc_code}: {e}")
         return jsonify({'error': str(e)}), 500
 
 

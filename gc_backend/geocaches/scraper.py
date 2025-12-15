@@ -609,7 +609,7 @@ class GeocachingScraper:
                 if entry not in checkers:
                     checkers.append(entry)
         if soup.find('div', {'class': 'CoordChecker'}):
-            checkers.append({'name': 'Geocaching', 'url': '#solution-checker'})
+            checkers.append({'name': 'Geocaching', 'url': url})
 
         # Images
         images: list[dict] = []
