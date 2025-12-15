@@ -156,7 +156,13 @@ class AnalysisWebPagePlugin:
         Logique de sélection des meilleures coordonnées parmi les résultats.
         Priorité : coordinates_finder > formula_parser > autres
         """
-        priority_order = ['coordinates_finder', 'formula_parser', 'image_alt_text_extractor', 'color_text_detector']
+        priority_order = [
+            'coordinates_finder',
+            'formula_parser',
+            'qr_code_detector',  # Coordonnées détectées via QR codes
+            'image_alt_text_extractor',
+            'color_text_detector',
+        ]
         
         # On cherche d'abord dans les résultats explicites des plugins
         for name in priority_order:

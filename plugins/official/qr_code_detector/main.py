@@ -66,6 +66,11 @@ class QRCodeDetectorPlugin:
                 "plugin_info": self._build_plugin_info(start_time),
             }
 
+        try:
+            from gc_backend.blueprints.coordinates import detect_gps_coordinates  # type: ignore
+        except Exception:  # pragma: no cover - dépend du contexte Flask
+            detect_gps_coordinates = None  # type: ignore
+
         geocache_id_raw = inputs.get("geocache_id")
         if geocache_id_raw is None:
             summary = "Champ 'geocache_id' manquant dans les inputs"
@@ -165,6 +170,7 @@ class QRCodeDetectorPlugin:
         findings: List[Dict[str, Any]] = []
         qr_codes: List[Dict[str, Any]] = []
         images_analyzed = 0
+        primary_coordinates = None
 
         for url in image_urls:
             full_url = self._normalize_image_url(url)
@@ -210,6 +216,53 @@ class QRCodeDetectorPlugin:
                             polygon_points.append({"x": point.x, "y": point.y})
 
                 qr_index = len(qr_codes) + 1
+
+                coordinates_info = None
+                decimal_lat = None
+                decimal_lon = None
+
+                if detect_gps_coordinates and text:
+                    try:
+                        detection = detect_gps_coordinates(text)
+                    except Exception as exc:  # pragma: no cover - dépend du contenu
+                        logger.warning(
+                            "[qr_code_detector] Erreur detect_gps_coordinates pour %s: %s",
+                            full_url,
+                            exc,
+                        )
+                        detection = None
+
+                    if detection and detection.get("exist"):
+                        decimal_lat = detection.get("decimal_latitude")
+                        decimal_lon = detection.get("decimal_longitude")
+                        ddm_lat = detection.get("ddm_lat")
+                        ddm_lon = detection.get("ddm_lon")
+                        ddm = detection.get("ddm")
+
+                        formatted = ddm
+                        if not formatted and ddm_lat and ddm_lon:
+                            formatted = f"{ddm_lat} {ddm_lon}"
+
+                        coordinates_info = {
+                            "latitude": ddm_lat or "",
+                            "longitude": ddm_lon or "",
+                            "formatted": formatted or "",
+                            "decimalLatitude": decimal_lat,
+                            "decimalLongitude": decimal_lon,
+                            "decimal_latitude": decimal_lat,
+                            "decimal_longitude": decimal_lon,
+                        }
+
+                        if (
+                            primary_coordinates is None
+                            and decimal_lat is not None
+                            and decimal_lon is not None
+                        ):
+                            primary_coordinates = {
+                                "latitude": decimal_lat,
+                                "longitude": decimal_lon,
+                            }
+
                 findings.append(
                     {
                         "id": f"qr_{qr_index}",
@@ -219,6 +272,9 @@ class QRCodeDetectorPlugin:
                         "qr_data": text,
                         "image_url": full_url,
                         "confidence": 1.0,
+                        "coordinates": coordinates_info,
+                        "decimal_latitude": decimal_lat,
+                        "decimal_longitude": decimal_lon,
                     }
                 )
 
@@ -253,6 +309,7 @@ class QRCodeDetectorPlugin:
             "results": findings,
             "qr_codes": qr_codes,
             "images_analyzed": images_analyzed,
+            "primary_coordinates": primary_coordinates,
             "plugin_info": self._build_plugin_info(start_time),
         }
 
