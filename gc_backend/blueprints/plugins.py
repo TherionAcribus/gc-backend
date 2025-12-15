@@ -55,9 +55,18 @@ class BatchPluginTask:
     Classe pour gérer l'exécution batch d'un plugin sur plusieurs géocaches.
     """
     
-    def __init__(self, task_id: str, plugin_name: str, geocaches: List[Dict], 
-                 inputs: Dict[str, Any], execution_mode: str = 'sequential',
-                 max_concurrency: int = 3, detect_coordinates: bool = True):
+    def __init__(
+        self,
+        task_id: str,
+        plugin_name: str,
+        geocaches: List[Dict],
+        inputs: Dict[str, Any],
+        execution_mode: str = 'sequential',
+        max_concurrency: int = 3,
+        detect_coordinates: bool = True,
+        app=None,
+        include_images: bool = False,
+    ):
         self.task_id = task_id
         self.plugin_name = plugin_name
         self.geocaches = geocaches
@@ -65,6 +74,8 @@ class BatchPluginTask:
         self.execution_mode = execution_mode
         self.max_concurrency = max_concurrency
         self.detect_coordinates = detect_coordinates
+        self.app = app
+        self.include_images = include_images
         
         # État de la tâche
         self.status = 'pending'  # pending, running, completed, failed, cancelled
@@ -97,11 +108,18 @@ class BatchPluginTask:
             self.started_at = datetime.utcnow()
             
             logger.info(f"Starting batch task {self.task_id}: {self.plugin_name} on {len(self.geocaches)} geocaches")
-            
-            if self.execution_mode == 'sequential':
-                self._execute_sequential()
+
+            if self.app is not None:
+                with self.app.app_context():
+                    if self.execution_mode == 'sequential':
+                        self._execute_sequential()
+                    else:
+                        self._execute_parallel()
             else:
-                self._execute_parallel()
+                if self.execution_mode == 'sequential':
+                    self._execute_sequential()
+                else:
+                    self._execute_parallel()
             
             if not self.cancelled:
                 self.status = 'completed'
@@ -158,6 +176,11 @@ class BatchPluginTask:
                     'completed_at': datetime.utcnow()
                 })
                 logger.error(f"Error executing plugin on {geocache['gc_code']}: {str(e)}")
+            finally:
+                try:
+                    db.session.remove()
+                except Exception:
+                    pass
     
     def _execute_parallel(self):
         """
@@ -174,6 +197,12 @@ class BatchPluginTask:
             result['started_at'] = datetime.utcnow()
             
             try:
+                if self.app is not None:
+                    ctx = self.app.app_context()
+                    ctx.push()
+                else:
+                    ctx = None
+
                 start_time = time.time()
                 
                 # Préparer les inputs pour cette géocache
@@ -206,6 +235,16 @@ class BatchPluginTask:
                     'completed_at': datetime.utcnow()
                 })
                 logger.error(f"Error executing plugin on {geocache['gc_code']}: {str(e)}")
+            finally:
+                try:
+                    db.session.remove()
+                except Exception:
+                    pass
+                if ctx is not None:
+                    try:
+                        ctx.pop()
+                    except Exception:
+                        pass
             
             return result
         
@@ -253,6 +292,12 @@ class BatchPluginTask:
                 elif default_value_source == 'geocache_coordinates' and geocache.get('coordinates'):
                     coords = geocache['coordinates']
                     inputs[key] = coords.get('coordinates_raw') or f"{coords['latitude']}, {coords['longitude']}"
+
+            if self.include_images and 'images' in input_types and geocache.get('images') and not inputs.get('images'):
+                inputs['images'] = geocache['images']
+
+            if 'waypoints' in input_types and geocache.get('waypoints') and not isinstance(inputs.get('waypoints'), list):
+                inputs['waypoints'] = geocache.get('waypoints') or []
         
         return inputs
     
@@ -261,6 +306,50 @@ class BatchPluginTask:
         Traite les résultats du plugin (détection de coordonnées, etc.).
         """
         processed = {}
+
+        primary = plugin_result.get('primary_coordinates')
+        if isinstance(primary, dict):
+            lat = primary.get('latitude')
+            lon = primary.get('longitude')
+            if lat is not None and lon is not None:
+                formatted = None
+                for item in plugin_result.get('results') or []:
+                    coords = item.get('coordinates')
+                    if isinstance(coords, dict) and coords.get('formatted'):
+                        formatted = coords.get('formatted')
+                        break
+                if not formatted:
+                    formatted = f"{lat}, {lon}"
+                try:
+                    processed['coordinates'] = {
+                        'latitude': float(lat),
+                        'longitude': float(lon),
+                        'formatted': str(formatted)
+                    }
+                    return processed
+                except Exception:
+                    pass
+
+        if plugin_result.get('results'):
+            for item in plugin_result.get('results'):
+                lat = item.get('decimal_latitude')
+                lon = item.get('decimal_longitude')
+                if lat is not None and lon is not None:
+                    formatted = None
+                    coords = item.get('coordinates')
+                    if isinstance(coords, dict):
+                        formatted = coords.get('formatted')
+                    if not formatted:
+                        formatted = f"{lat}, {lon}"
+                    try:
+                        processed['coordinates'] = {
+                            'latitude': float(lat),
+                            'longitude': float(lon),
+                            'formatted': str(formatted)
+                        }
+                        return processed
+                    except Exception:
+                        continue
         
         if self.detect_coordinates and plugin_result.get('results'):
             for item in plugin_result['results']:
@@ -1038,6 +1127,7 @@ def batch_execute_plugins():
         execution_mode = options.get('execution_mode', 'sequential')
         max_concurrency = options.get('max_concurrency', 3)
         detect_coordinates = options.get('detect_coordinates', True)
+        include_images = options.get('include_images', False)
         
         # Validation du mode d'exécution
         if execution_mode not in ['sequential', 'parallel']:
@@ -1059,6 +1149,7 @@ def batch_execute_plugins():
                     'hint': geocache.hints,
                     'difficulty': geocache.difficulty,
                     'terrain': geocache.terrain,
+                    'images': geocache.images or [],
                     'coordinates': {
                         'latitude': geocache.latitude,
                         'longitude': geocache.longitude,
@@ -1084,7 +1175,9 @@ def batch_execute_plugins():
             inputs=inputs,
             execution_mode=execution_mode,
             max_concurrency=max_concurrency,
-            detect_coordinates=detect_coordinates
+            detect_coordinates=detect_coordinates,
+            app=current_app._get_current_object(),
+            include_images=include_images,
         )
         
         # Stocker la tâche
