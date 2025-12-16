@@ -64,6 +64,12 @@ def run_checker():
     url = (payload.get('url') or '').strip()
     input_payload = payload.get('input') or {}
 
+    logger.info(
+        'Checker run start url=%s input_keys=%s',
+        url,
+        sorted(list(input_payload.keys())) if isinstance(input_payload, dict) else None,
+    )
+
     if not url:
         return jsonify({'status': 'error', 'error': 'Missing required field: url'}), 400
 
@@ -73,6 +79,7 @@ def run_checker():
         result = _run_playwright_blocking(lambda: runner.run(url=url, input_payload=input_payload))
         return jsonify({'status': 'success', 'result': result})
     except ValueError as exc:
+        logger.warning('Checker run failed (bad request) url=%s error=%s', url, exc)
         return jsonify({'status': 'error', 'error': str(exc)}), 400
     except Exception as exc:
         logger.error('Checker run failed: %s', exc, exc_info=True)
@@ -110,7 +117,7 @@ def run_checker_interactive():
             'Checker run-interactive done url=%s duration_ms=%s status=%s',
             url,
             duration_ms,
-            getattr(result, 'status', None) if hasattr(result, 'status') else None,
+            result.get('status') if isinstance(result, dict) else getattr(result, 'status', None),
         )
         return jsonify({'status': 'success', 'result': result})
     except ValueError as exc:

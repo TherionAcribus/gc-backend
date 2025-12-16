@@ -115,6 +115,7 @@ class GeocachingSolutionCheckerAdapter:
 
         deadline = time.time() + max(1, int(timeout_sec))
         last_text = initial_text
+        saw_recaptcha_error = False
 
         while time.time() < deadline:
             page.wait_for_timeout(1000)
@@ -122,6 +123,9 @@ class GeocachingSolutionCheckerAdapter:
             result = self._read_solution_result(page, timeout_ms)
             if result['raw_text']:
                 last_text = result['raw_text']
+
+            if result.get('captcha_present') and result.get('response_class') and 'solution-error' in str(result.get('response_class')).lower():
+                saw_recaptcha_error = True
 
             coords_raw = self._extract_coords(result)
             if coords_raw:
@@ -145,7 +149,11 @@ class GeocachingSolutionCheckerAdapter:
 
         return CheckerRunResult(
             status='unknown',
-            message='Timed out waiting for Solution Checker result (solve reCAPTCHA and click “Check Solution”)',
+            message=(
+                'Timed out waiting for Solution Checker result (solve/refresh reCAPTCHA and click “Check Solution”)'
+                if saw_recaptcha_error
+                else 'Timed out waiting for Solution Checker result (solve reCAPTCHA and click “Check Solution”)'
+            ),
             evidence=(last_text or '').strip()[:2000],
             extracted=extracted,
         )
@@ -184,13 +192,9 @@ class GeocachingSolutionCheckerAdapter:
             if result['raw_text']:
                 last_text = result['raw_text']
             coords_raw = self._extract_coords(result)
+            extracted: dict[str, Any] = {}
             if coords_raw:
-                return CheckerRunResult(
-                    status='success',
-                    message='Solution Checker accepted the candidate',
-                    evidence=result['evidence'],
-                    extracted={'coordinates_raw': coords_raw},
-                )
+                extracted['coordinates_raw'] = coords_raw
             if result['status'] in {'success', 'failure'}:
                 return CheckerRunResult(
                     status=result['status'],
@@ -200,6 +204,7 @@ class GeocachingSolutionCheckerAdapter:
                         else 'Solution Checker rejected the candidate'
                     ),
                     evidence=result['evidence'],
+                    extracted=extracted,
                 )
 
         return CheckerRunResult(
@@ -208,7 +213,7 @@ class GeocachingSolutionCheckerAdapter:
             evidence=(last_text or self._collect_text(page, timeout_ms)).strip()[:2000],
         )
 
-    def _extract_coords(self, result: dict[str, str]) -> str | None:
+    def _extract_coords(self, result: dict[str, Any]) -> str | None:
         lat = (result.get('lat') or '').strip()
         lon = (result.get('lon') or '').strip()
         if lat and lon:
@@ -219,15 +224,32 @@ class GeocachingSolutionCheckerAdapter:
             return m.group(0)
         return None
 
-    def _read_solution_result(self, page: Any, timeout_ms: int) -> dict[str, str]:
+    def _read_solution_result(self, page: Any, timeout_ms: int) -> dict[str, Any]:
         response_text = ''
+        response_class = ''
         lat_text = ''
         lon_text = ''
+        captcha_present = False
 
         try:
             response_text = (page.locator('#lblSolutionResponse').inner_text(timeout=2000) or '').strip()
         except Exception:
             response_text = ''
+
+        try:
+            response_class = (page.locator('#lblSolutionResponse').get_attribute('class', timeout=2000) or '').strip()
+        except Exception:
+            response_class = ''
+
+        try:
+            captcha_loc = page.locator('#ctl00_ContentBody_divRecaptcha, .g-recaptcha, iframe[src*="recaptcha"]').first
+            if captcha_loc.count() > 0:
+                try:
+                    captcha_present = bool(captcha_loc.is_visible())
+                except Exception:
+                    captcha_present = True
+        except Exception:
+            captcha_present = False
 
         try:
             lat_text = (page.locator('#solution-lat').inner_text(timeout=2000) or '').strip()
@@ -243,11 +265,18 @@ class GeocachingSolutionCheckerAdapter:
         evidence = combined or self._collect_text(page, timeout_ms)
 
         status = 'unknown'
-        if combined:
-            if _SUCCESS_RE.search(combined) or (lat_text and lon_text):
-                status = 'success'
-            elif _FAILURE_RE.search(combined):
-                status = 'failure'
+        response_class_lower = (response_class or '').lower()
+        if 'solution-success' in response_class_lower:
+            status = 'success'
+        elif 'solution-error' in response_class_lower:
+            status = 'unknown' if captcha_present else 'failure'
+        else:
+            status_text = (response_text or combined or '').strip()
+            if status_text:
+                if _SUCCESS_RE.search(status_text):
+                    status = 'success'
+                elif _FAILURE_RE.search(status_text):
+                    status = 'unknown' if captcha_present else 'failure'
 
         return {
             'status': status,
@@ -255,6 +284,8 @@ class GeocachingSolutionCheckerAdapter:
             'raw_text': (combined or '').strip(),
             'lat': lat_text,
             'lon': lon_text,
+            'captcha_present': captcha_present,
+            'response_class': response_class,
         }
 
     def _collect_text(self, page: Any, timeout_ms: int) -> str:
