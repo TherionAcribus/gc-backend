@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
@@ -68,7 +69,13 @@ class CheckerRunner:
             )
         )
 
-    def run_interactive(self, url: str, input_payload: dict[str, Any], timeout_sec: int) -> dict[str, Any]:
+    def run_interactive(
+        self,
+        url: str,
+        input_payload: dict[str, Any],
+        timeout_sec: int,
+        keep_open: bool = False,
+    ) -> dict[str, Any]:
         self._validate_url(url)
 
         adapter = self._select_adapter(url)
@@ -104,9 +111,23 @@ class CheckerRunner:
                     timeout_ms=self.timeout_ms,
                     timeout_sec=int(timeout_sec),
                 )
-                return asdict(result)
+                payload = asdict(result)
+
+                if keep_open:
+                    logger.info('Keeping checker page open until the user closes the browser window: %s', url)
+                    try:
+                        context.wait_for_event('close', timeout=0)
+                    except PlaywrightError:
+                        pass
+                    except Exception:
+                        pass
+
+                return payload
             finally:
-                context.close()
+                try:
+                    context.close()
+                except Exception:
+                    pass
 
     def _run_once(self, adapter: CheckerAdapter, url: str, input_payload: dict[str, Any]) -> CheckerRunResult:
         self.profile_dir.mkdir(parents=True, exist_ok=True)

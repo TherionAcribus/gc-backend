@@ -35,6 +35,15 @@ def _is_checkers_enabled() -> bool:
     return bool(get_value_or_default('geoApp.checkers.enabled', True))
 
 
+def _should_keep_checker_page_open(url: str) -> bool:
+    url_lower = (url or '').lower()
+    if 'certitudes.org' in url_lower:
+        return bool(get_value_or_default('geoApp.checkers.certitudes.keepPageOpen', False))
+    if 'geocaching.com' in url_lower:
+        return bool(get_value_or_default('geoApp.checkers.geocaching.keepPageOpen', False))
+    return False
+
+
 def _build_runner() -> CheckerRunner:
     headless = bool(get_value_or_default('geoApp.checkers.playwright.headless', True))
     timeout_ms = int(get_value_or_default('geoApp.checkers.timeoutMs', 20000))
@@ -100,6 +109,7 @@ def run_checker_interactive():
     if not url:
         return jsonify({'status': 'error', 'error': 'Missing required field: url'}), 400
 
+    keep_open = _should_keep_checker_page_open(url)
     runner = _build_runner()
 
     try:
@@ -110,7 +120,12 @@ def run_checker_interactive():
             sorted(list(input_payload.keys())) if isinstance(input_payload, dict) else None,
         )
         result = _run_playwright_blocking(
-            lambda: runner.run_interactive(url=url, input_payload=input_payload, timeout_sec=timeout_sec)
+            lambda: runner.run_interactive(
+                url=url,
+                input_payload=input_payload,
+                timeout_sec=timeout_sec,
+                keep_open=keep_open,
+            )
         )
         duration_ms = int((time.perf_counter() - started_at) * 1000)
         logger.info(

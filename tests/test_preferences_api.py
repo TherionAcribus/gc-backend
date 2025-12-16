@@ -47,6 +47,8 @@ def test_get_preferences_returns_defaults(client):
     payload = json.loads(response.data)
     assert 'preferences' in payload
     assert payload['preferences']['geoApp.plugins.lazyMode'] is True
+    assert payload['preferences']['geoApp.checkers.certitudes.keepPageOpen'] is False
+    assert payload['preferences']['geoApp.checkers.geocaching.keepPageOpen'] is False
 
 
 def test_put_preference_updates_value(client):
