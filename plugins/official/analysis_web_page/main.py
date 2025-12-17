@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from loguru import logger
 from typing import Dict, Any, List
 
@@ -28,6 +29,7 @@ class AnalysisWebPagePlugin:
 
         geocache_id_raw = inputs.get('geocache_id')
         text_content = inputs.get('text', '')
+        origin_coords = inputs.get('origin_coords')
 
         # Par défaut, on utilise le texte fourni (peut être vide)
         page_content = text_content
@@ -69,6 +71,12 @@ class AnalysisWebPagePlugin:
                             geocache_id_str,
                             len(page_content),
                         )
+
+                    if not origin_coords:
+                        origin_coords = (
+                            getattr(geocache, 'coordinates_raw', None)
+                            or getattr(geocache, 'original_coordinates_raw', None)
+                        )
             except Exception as e:
                 logger.warning(f"Impossible de récupérer la géocache {geocache_id_raw}: {e}")
                 # On continue avec text_content si disponible
@@ -107,6 +115,15 @@ class AnalysisWebPagePlugin:
                 "enable_gps_detection": True,
                 "mode": "analyze"  # Mode par défaut pour ces plugins
             }
+
+            if plugin_name == "coordinate_projection":
+                stripped = re.sub(r"<[^>]+>", " ", page_content or "")
+                stripped = re.sub(r"\s+", " ", stripped).strip()
+                plugin_inputs["text"] = stripped
+                plugin_inputs["mode"] = "decode"
+                plugin_inputs["strict"] = "smooth"
+                if origin_coords:
+                    plugin_inputs["origin_coords"] = origin_coords
             
             # Passer les waypoints si disponibles et si le plugin est additional_waypoints_analyzer
             if plugin_name == "additional_waypoints_analyzer" and inputs.get("waypoints"):
@@ -159,6 +176,7 @@ class AnalysisWebPagePlugin:
         priority_order = [
             'coordinates_finder',
             'formula_parser',
+            'coordinate_projection',
             'qr_code_detector',  # Coordonnées détectées via QR codes
             'image_alt_text_extractor',
             'color_text_detector',

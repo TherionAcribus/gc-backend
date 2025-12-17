@@ -20,6 +20,12 @@
       "required": true,
       "default_value_source": "geocache_id"
     },
+    "origin_coords": {
+      "type": "string",
+      "label": "Coordonnées d'origine (optionnel)",
+      "required": false,
+      "hidden": true
+    },
     "text": {
       "type": "textarea",
       "label": "Texte à analyser (fallback)",
@@ -49,6 +55,10 @@
     {
       "plugin_name": "coordinates_finder",
       "description": "Recherche de coordonnées GPS dans le texte de la page"
+    },
+    {
+      "plugin_name": "coordinate_projection",
+      "description": "Projection de coordonnées via distance/azimut détectés dans la page"
     },
     {
       "plugin_name": "color_text_detector",
