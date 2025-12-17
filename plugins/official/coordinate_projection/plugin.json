@@ -1,0 +1,101 @@
+{
+  "name": "coordinate_projection",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Projette une coordonnée selon une distance et un azimut (bearing) et renvoie la nouvelle coordonnée au format Geocaching!!",
+  "author": "MysterAI Team",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Coordinates", "Projection"],
+  "kinds": ["geo", "calculator"],
+  "brute_force": false,
+  "enable_scoring": false,
+  "accept_accents": true,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": true,
+    "decode": true,
+    "encode": false
+  },
+  "defaults": {
+    "include_in_analysis": true,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "textarea",
+      "label": "Texte (optionnel)",
+      "placeholder": "Ex: Projetez-vous de 1247.162 mètres à 27,309 degrés",
+      "description": "En mode smooth, le plugin tente d'extraire distance/angle depuis ce texte. Peut aussi contenir des coordonnées d'origine.",
+      "default": ""
+    },
+    "origin_coords": {
+      "type": "string",
+      "label": "Coordonnées d'origine (optionnel)",
+      "placeholder": "Ex: N 49° 12.374 E 005° 52.727",
+      "description": "Si vide, le plugin tentera de détecter les coordonnées dans le champ Texte.",
+      "default": ""
+    },
+    "strict": {
+      "type": "select",
+      "label": "Mode",
+      "options": [
+        {"value": "smooth", "label": "Smooth (extraire distance/angle du texte)"},
+        {"value": "strict", "label": "Strict (utiliser distance/angle ci-dessous)"}
+      ],
+      "default": "smooth"
+    },
+    "distance": {
+      "type": "float",
+      "label": "Distance (mode strict)",
+      "placeholder": "500",
+      "default": 0
+    },
+    "distance_unit": {
+      "type": "select",
+      "label": "Unité de distance (mode strict)",
+      "options": ["m", "km", "miles"],
+      "default": "m"
+    },
+    "bearing_deg": {
+      "type": "float",
+      "label": "Azimut en degrés (mode strict)",
+      "placeholder": "90",
+      "default": 0
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode plugin",
+      "options": ["decode", "detect"],
+      "default": "decode",
+      "description": "detect = ne calcule pas, seulement extraction et validation"
+    },
+    "enable_gps_detection": {
+      "type": "checkbox",
+      "label": "Inclure la détection GPS sur la sortie",
+      "default": true
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Coordonnée calculée"
+    },
+    "decimal_latitude": {
+      "type": "number",
+      "label": "Latitude décimale"
+    },
+    "decimal_longitude": {
+      "type": "number",
+      "label": "Longitude décimale"
+    },
+    "log": {
+      "type": "string",
+      "label": "Détails"
+    }
+  }
+}
