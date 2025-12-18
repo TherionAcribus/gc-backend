@@ -9,6 +9,8 @@ from ..database import db
 from ..geocaches.models import Geocache
 from ..geocaches.importer import GeocacheImporter
 from ..geocaches.scraper import GeocachingScraper
+from ..geocaches.image_storage import remove_geocache_dir
+from ..geocaches.image_sync import ensure_images_v2_for_geocache
 
 bp = Blueprint('geocaches', __name__)
 logger = logging.getLogger(__name__)
@@ -252,6 +254,11 @@ def delete_geocache(geocache_id: int):
         
         db.session.delete(geocache)
         db.session.commit()
+
+        try:
+            remove_geocache_dir(geocache_id)
+        except Exception as e:
+            logger.warning(f"Failed to cleanup stored images for geocache {geocache_id}: {e}")
         
         logger.info(f"Successfully deleted geocache {gc_code}")
         return jsonify({'message': f'Geocache {gc_code} deleted successfully'}), 200
@@ -304,6 +311,8 @@ def refresh_geocache(geocache_id: int):
         geocache.favorites_count = getattr(s, 'favorites_count', None)
         geocache.logs_count = getattr(s, 'logs_count', None)
         geocache.images = getattr(s, 'images', None)
+
+        ensure_images_v2_for_geocache(geocache)
         
         # Supprimer et recréer les waypoints et checkers
         from ..geocaches.models import GeocacheWaypoint, GeocacheChecker

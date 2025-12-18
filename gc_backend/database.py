@@ -13,12 +13,19 @@ def init_db(app):
     with app.app_context():
         from .models import Zone  # noqa
         # Importer les modèles Geocache, GeocacheLog et Notes pour la création de table
-        from .geocaches.models import Geocache, GeocacheLog, Note, GeocacheNote  # noqa: F401
+        from .geocaches.models import Geocache, GeocacheLog, Note, GeocacheNote, GeocacheImage  # noqa: F401
         # Importer le modèle Plugin pour la création de table
         from .plugins.models import Plugin  # noqa: F401
 
         logger.info("Creating database tables if not exist…")
         db.create_all()
+
+        try:
+            from .geocaches.image_sync import ensure_images_v2_for_all_geocaches
+
+            ensure_images_v2_for_all_geocaches()
+        except Exception as e:
+            logger.error(f"GeocacheImage backfill error: {e}")
 
         # Migration légère/idempotente pour ajouter les nouvelles colonnes SQLite
         try:

@@ -7,6 +7,7 @@ from ..database import db
 from ..models import Zone
 from .models import Geocache, GeocacheWaypoint, GeocacheChecker
 from .scraper import GeocachingScraper
+from .image_sync import ensure_images_v2_for_geocache
 
 
 logger = logging.getLogger(__name__)
@@ -95,6 +96,8 @@ class GeocacheImporter:
         try:
             db.session.add(g)
             db.session.flush()
+
+            ensure_images_v2_for_geocache(g)
 
             # Persistance des relations si disponibles
             for w in getattr(s, 'waypoints', []) or []:

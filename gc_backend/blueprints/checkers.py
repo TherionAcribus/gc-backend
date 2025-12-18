@@ -11,8 +11,13 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
-from ..services.checkers.runner import CheckerRunner
-from ..services.checkers.session import GeocachingSessionManager, CertitudesSessionManager
+try:
+    from ..services.checkers.runner import CheckerRunner
+    from ..services.checkers.session import GeocachingSessionManager, CertitudesSessionManager
+except ModuleNotFoundError:  # pragma: no cover
+    CheckerRunner = None
+    GeocachingSessionManager = None
+    CertitudesSessionManager = None
 from ..services.checkers.storage import get_default_profile_dir
 from ..utils.preferences import get_value_or_default
 
@@ -44,7 +49,23 @@ def _should_keep_checker_page_open(url: str) -> bool:
     return False
 
 
+def _require_playwright():
+    if CheckerRunner is None or GeocachingSessionManager is None or CertitudesSessionManager is None:
+        return jsonify(
+            {
+                'status': 'error',
+                'error': "missing_dependency: playwright",
+                'message': "Le module 'playwright' n'est pas installé. Installez-le pour activer les checkers.",
+            }
+        ), 503
+    return None
+
+
 def _build_runner() -> CheckerRunner:
+    missing = _require_playwright()
+    if missing is not None:
+        raise RuntimeError('missing_dependency: playwright')
+
     headless = bool(get_value_or_default('geoApp.checkers.playwright.headless', True))
     timeout_ms = int(get_value_or_default('geoApp.checkers.timeoutMs', 20000))
     max_attempts = int(get_value_or_default('geoApp.checkers.maxAttempts', 2))
@@ -68,6 +89,10 @@ def run_checker():
     """Runs a checker and returns a normalized result."""
     if not _is_checkers_enabled():
         return jsonify({'status': 'error', 'error': 'checkers_disabled'}), 403
+
+    missing = _require_playwright()
+    if missing is not None:
+        return missing
 
     payload = request.get_json(silent=True, force=True) or {}
     url = (payload.get('url') or '').strip()
@@ -99,6 +124,10 @@ def run_checker():
 def run_checker_interactive():
     if not _is_checkers_enabled():
         return jsonify({'status': 'error', 'error': 'checkers_disabled'}), 403
+
+    missing = _require_playwright()
+    if missing is not None:
+        return missing
 
     started_at = time.perf_counter()
     payload = request.get_json(silent=True, force=True) or {}
@@ -152,6 +181,10 @@ def ensure_session():
     if not _is_checkers_enabled():
         return jsonify({'status': 'error', 'error': 'checkers_disabled'}), 403
 
+    missing = _require_playwright()
+    if missing is not None:
+        return missing
+
     payload = request.get_json(silent=True, force=True) or {}
     provider = (payload.get('provider') or 'geocaching').strip().lower()
     wp = (payload.get('wp') or '').strip() or None
@@ -184,6 +217,10 @@ def login_session():
     """Opens a headed browser window and waits for user login (currently Geocaching)."""
     if not _is_checkers_enabled():
         return jsonify({'status': 'error', 'error': 'checkers_disabled'}), 403
+
+    missing = _require_playwright()
+    if missing is not None:
+        return missing
 
     payload = request.get_json(silent=True, force=True) or {}
     provider = (payload.get('provider') or 'geocaching').strip().lower()

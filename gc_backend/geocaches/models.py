@@ -57,6 +57,7 @@ class Geocache(db.Model):
     checkers = db.relationship('GeocacheChecker', back_populates='geocache', cascade='all, delete-orphan', lazy=True)
     logs = db.relationship('GeocacheLog', back_populates='geocache', cascade='all, delete-orphan', lazy=True, order_by='desc(GeocacheLog.date)')
     notes = db.relationship('Note', secondary='geocache_note', back_populates='geocaches', lazy=True)
+    images_v2 = db.relationship('GeocacheImage', back_populates='geocache', cascade='all, delete-orphan', lazy=True)
 
     def to_list_item(self) -> dict:
         return {
@@ -110,6 +111,72 @@ class Geocache(db.Model):
             'gc_personal_note': self.gc_personal_note,
             'gc_personal_note_synced_at': self.gc_personal_note_synced_at.isoformat() if self.gc_personal_note_synced_at else None,
             'gc_personal_note_last_pushed_at': self.gc_personal_note_last_pushed_at.isoformat() if self.gc_personal_note_last_pushed_at else None,
+        }
+
+
+class GeocacheImage(db.Model):
+    __tablename__ = 'geocache_image'
+
+    id = db.Column(db.Integer, primary_key=True)
+    geocache_id = db.Column(db.Integer, db.ForeignKey('geocache.id'), nullable=False, index=True)
+    source_url = db.Column(db.String(2000), nullable=False)
+
+    stored = db.Column(db.Boolean, default=False)
+    stored_path = db.Column(db.String(1000))
+    mime_type = db.Column(db.String(100))
+    byte_size = db.Column(db.Integer)
+    sha256 = db.Column(db.String(64))
+
+    parent_image_id = db.Column(db.Integer, db.ForeignKey('geocache_image.id'))
+    derivation_type = db.Column(db.String(20), default='original')
+    crop_rect = db.Column(db.JSON)
+
+    title = db.Column(db.String(255))
+    note = db.Column(db.Text)
+    tags = db.Column(db.JSON)
+    detected_features = db.Column(db.JSON)
+    qr_payload = db.Column(db.Text)
+    ocr_text = db.Column(db.Text)
+    ocr_language = db.Column(db.String(20))
+
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    geocache = db.relationship('Geocache', back_populates='images_v2')
+    parent_image = db.relationship('GeocacheImage', remote_side=[id])
+
+    __table_args__ = (
+        db.UniqueConstraint('geocache_id', 'source_url', 'parent_image_id', 'derivation_type', name='unique_geocache_image_variant'),
+    )
+
+    def get_display_url(self) -> str:
+        if self.stored:
+            return f'/api/geocache-images/{self.id}/content'
+        return self.source_url
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'geocache_id': self.geocache_id,
+            'url': self.get_display_url(),
+            'source_url': self.source_url,
+            'stored': bool(self.stored),
+            'stored_path': self.stored_path,
+            'mime_type': self.mime_type,
+            'byte_size': self.byte_size,
+            'sha256': self.sha256,
+            'parent_image_id': self.parent_image_id,
+            'derivation_type': self.derivation_type,
+            'crop_rect': self.crop_rect,
+            'title': self.title,
+            'note': self.note,
+            'tags': self.tags,
+            'detected_features': self.detected_features,
+            'qr_payload': self.qr_payload,
+            'ocr_text': self.ocr_text,
+            'ocr_language': self.ocr_language,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }
 
 

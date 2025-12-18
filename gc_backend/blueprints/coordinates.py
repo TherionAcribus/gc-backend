@@ -5,7 +5,10 @@ from flask import Blueprint, request, jsonify
 from ..database import db
 from ..geocaches.models import Geocache
 import traceback
-from pyproj import Geod
+try:
+    from pyproj import Geod
+except ModuleNotFoundError:  # pragma: no cover
+    Geod = None
 
 coordinates_bp = Blueprint('coordinates', __name__)
 
@@ -302,6 +305,11 @@ def calculate_distance_between_coords(origin_lat, origin_lon, dest_lat, dest_lon
         raise ValueError("Impossible de convertir les coordonnées en format décimal")
     
     # Calculer la distance avec Geod
+    if Geod is None:
+        raise RuntimeError(
+            "Le module 'pyproj' n'est pas installé. "
+            "Installez-le pour activer le calcul de distance (pip install pyproj)."
+        )
     geod = Geod(ellps="WGS84")
     _, _, distance_m = geod.inv(
         origin_coords['longitude'], origin_coords['latitude'],
