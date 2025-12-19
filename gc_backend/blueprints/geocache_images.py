@@ -117,6 +117,35 @@ def store_geocache_image(image_id: int):
         return jsonify({'error': 'Failed to store image'}), 500
 
 
+@bp.post('/api/geocache-images/<int:image_id>/unstore')
+def unstore_geocache_image(image_id: int):
+    image = GeocacheImage.query.get(image_id)
+    if not image:
+        return jsonify({'error': 'Image not found'}), 404
+
+    if not image.stored and not image.stored_path:
+        return jsonify(image.to_dict())
+
+    try:
+        if image.stored_path:
+            full_path = _safe_resolve_stored_file(image.stored_path)
+            if full_path.exists() and full_path.is_file():
+                full_path.unlink()
+
+        image.stored = False
+        image.stored_path = None
+        image.mime_type = None
+        image.byte_size = None
+        image.sha256 = None
+
+        db.session.commit()
+        return jsonify(image.to_dict())
+    except Exception as exc:
+        logger.error('Failed to unstore image %s: %s', image_id, exc, exc_info=True)
+        db.session.rollback()
+        return jsonify({'error': 'Failed to unstore image'}), 500
+
+
 @bp.post('/api/geocaches/<int:geocache_id>/images/store')
 def store_all_geocache_images(geocache_id: int):
     geocache = Geocache.query.get(geocache_id)
