@@ -131,6 +131,8 @@ class GeocacheImage(db.Model):
     derivation_type = db.Column(db.String(20), default='original')
     crop_rect = db.Column(db.JSON)
 
+    editor_state_json = db.Column(db.Text)
+
     title = db.Column(db.String(255))
     note = db.Column(db.Text)
     tags = db.Column(db.JSON)

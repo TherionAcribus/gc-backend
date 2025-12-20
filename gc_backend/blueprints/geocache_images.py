@@ -81,6 +81,122 @@ def patch_geocache_image(image_id: int):
     return jsonify(image.to_dict())
 
 
+@bp.get('/api/geocache-images/<int:image_id>/editor-state')
+def get_geocache_image_editor_state(image_id: int):
+    image = GeocacheImage.query.get(image_id)
+    if not image:
+        return jsonify({'error': 'Image not found'}), 404
+
+    return jsonify({'editor_state_json': image.editor_state_json})
+
+
+def _get_uploaded_rendered_file():
+    uploaded = request.files.get('rendered_file')
+    if not uploaded:
+        return None, jsonify({'error': 'rendered_file is required'}), 400
+    content = uploaded.read()
+    if not content:
+        return None, jsonify({'error': 'rendered_file is empty'}), 400
+    content_type = uploaded.mimetype or request.form.get('mime_type') or 'application/octet-stream'
+    return (content, content_type), None, None
+
+
+@bp.post('/api/geocache-images/<int:source_image_id>/edits')
+def create_geocache_image_edit(source_image_id: int):
+    source = GeocacheImage.query.get(source_image_id)
+    if not source:
+        return jsonify({'error': 'Image not found'}), 404
+
+    upload, error_response, status_code = _get_uploaded_rendered_file()
+    if error_response is not None:
+        return error_response, status_code
+
+    editor_state_json = request.form.get('editor_state_json')
+    title = request.form.get('title')
+
+    content, content_type = upload
+
+    derived = GeocacheImage(
+        geocache_id=source.geocache_id,
+        source_url=source.source_url,
+        parent_image_id=source.id,
+        derivation_type='edited',
+        title=title,
+        editor_state_json=editor_state_json,
+        stored=False,
+    )
+
+    try:
+        db.session.add(derived)
+        db.session.flush()
+
+        stored_path, mime_type, byte_size, sha256 = write_image_file(
+            geocache_id=derived.geocache_id,
+            image_id=derived.id,
+            content=content,
+            content_type=content_type,
+            source_url=source.source_url,
+        )
+
+        derived.stored = True
+        derived.stored_path = stored_path
+        derived.mime_type = mime_type
+        derived.byte_size = byte_size
+        derived.sha256 = sha256
+
+        db.session.commit()
+        return jsonify(derived.to_dict())
+    except Exception as exc:
+        logger.error('Failed to create edit for image %s: %s', source_image_id, exc, exc_info=True)
+        db.session.rollback()
+        return jsonify({'error': 'Failed to create edited image'}), 500
+
+
+@bp.put('/api/geocache-images/<int:image_id>/edits')
+def update_geocache_image_edit(image_id: int):
+    image = GeocacheImage.query.get(image_id)
+    if not image:
+        return jsonify({'error': 'Image not found'}), 404
+
+    if not image.parent_image_id:
+        return jsonify({'error': 'Only derived images can be overwritten'}), 400
+
+    upload, error_response, status_code = _get_uploaded_rendered_file()
+    if error_response is not None:
+        return error_response, status_code
+
+    editor_state_json = request.form.get('editor_state_json')
+    title = request.form.get('title')
+
+    content, content_type = upload
+
+    try:
+        stored_path, mime_type, byte_size, sha256 = write_image_file(
+            geocache_id=image.geocache_id,
+            image_id=image.id,
+            content=content,
+            content_type=content_type,
+            source_url=image.source_url,
+        )
+
+        image.stored = True
+        image.stored_path = stored_path
+        image.mime_type = mime_type
+        image.byte_size = byte_size
+        image.sha256 = sha256
+        if title is not None:
+            image.title = title
+        if editor_state_json is not None:
+            image.editor_state_json = editor_state_json
+
+        db.session.commit()
+        return jsonify(image.to_dict())
+    except Exception as exc:
+        logger.error('Failed to update edited image %s: %s', image_id, exc, exc_info=True)
+        db.session.rollback()
+        return jsonify({'error': 'Failed to update edited image'}), 500
+
+
 @bp.post('/api/geocache-images/<int:image_id>/store')
 def store_geocache_image(image_id: int):
     image = GeocacheImage.query.get(image_id)
