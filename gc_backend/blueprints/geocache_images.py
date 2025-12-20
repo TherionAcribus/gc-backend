@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any, Dict
@@ -21,6 +22,15 @@ from ..geocaches.models import Geocache, GeocacheImage
 
 bp = Blueprint('geocache_images', __name__)
 logger = logging.getLogger(__name__)
+
+_MAX_RENDERED_FILE_BYTES = 10 * 1024 * 1024
+_MAX_EDITOR_STATE_BYTES = 1024 * 1024
+_ALLOWED_RENDERED_MIME_TYPES = {
+    'image/png',
+    'image/jpeg',
+    'image/jpg',
+    'image/webp',
+}
 
 
 def _safe_resolve_stored_file(stored_path: str) -> Path:
@@ -94,10 +104,27 @@ def _get_uploaded_rendered_file():
     uploaded = request.files.get('rendered_file')
     if not uploaded:
         return None, jsonify({'error': 'rendered_file is required'}), 400
-    content = uploaded.read()
+
+    content = uploaded.read(_MAX_RENDERED_FILE_BYTES + 1)
     if not content:
         return None, jsonify({'error': 'rendered_file is empty'}), 400
-    content_type = uploaded.mimetype or request.form.get('mime_type') or 'application/octet-stream'
+    if len(content) > _MAX_RENDERED_FILE_BYTES:
+        return None, jsonify({'error': 'rendered_file is too large'}), 413
+
+    content_type = (uploaded.mimetype or request.form.get('mime_type') or '').split(';')[0].strip().lower()
+    if content_type not in _ALLOWED_RENDERED_MIME_TYPES:
+        return None, jsonify({'error': 'Unsupported mime type'}), 400
+
+    is_png = content.startswith(b'\x89PNG\r\n\x1a\n')
+    is_jpeg = content.startswith(b'\xff\xd8')
+    is_webp = content.startswith(b'RIFF') and len(content) > 12 and content[8:12] == b'WEBP'
+    if content_type == 'image/png' and not is_png:
+        return None, jsonify({'error': 'Invalid PNG file'}), 400
+    if content_type in {'image/jpeg', 'image/jpg'} and not is_jpeg:
+        return None, jsonify({'error': 'Invalid JPEG file'}), 400
+    if content_type == 'image/webp' and not is_webp:
+        return None, jsonify({'error': 'Invalid WEBP file'}), 400
+
     return (content, content_type), None, None
 
 
@@ -107,11 +134,22 @@ def create_geocache_image_edit(source_image_id: int):
     if not source:
         return jsonify({'error': 'Image not found'}), 404
 
+    existing = GeocacheImage.query.filter_by(parent_image_id=source.id, derivation_type='edited').first()
+    if existing is not None:
+        return jsonify({'error': 'Edited image already exists', 'existing_image_id': existing.id}), 409
+
     upload, error_response, status_code = _get_uploaded_rendered_file()
     if error_response is not None:
         return error_response, status_code
 
     editor_state_json = request.form.get('editor_state_json')
+    if editor_state_json is not None:
+        if len(editor_state_json.encode('utf-8')) > _MAX_EDITOR_STATE_BYTES:
+            return jsonify({'error': 'editor_state_json is too large'}), 413
+        try:
+            json.loads(editor_state_json)
+        except json.JSONDecodeError:
+            return jsonify({'error': 'editor_state_json must be valid JSON'}), 400
     title = request.form.get('title')
 
     content, content_type = upload
@@ -161,11 +199,21 @@ def update_geocache_image_edit(image_id: int):
     if not image.parent_image_id:
         return jsonify({'error': 'Only derived images can be overwritten'}), 400
 
+    if image.derivation_type != 'edited':
+        return jsonify({'error': 'Only edited derived images can be overwritten'}), 400
+
     upload, error_response, status_code = _get_uploaded_rendered_file()
     if error_response is not None:
         return error_response, status_code
 
     editor_state_json = request.form.get('editor_state_json')
+    if editor_state_json is not None:
+        if len(editor_state_json.encode('utf-8')) > _MAX_EDITOR_STATE_BYTES:
+            return jsonify({'error': 'editor_state_json is too large'}), 413
+        try:
+            json.loads(editor_state_json)
+        except json.JSONDecodeError:
+            return jsonify({'error': 'editor_state_json must be valid JSON'}), 400
     title = request.form.get('title')
 
     content, content_type = upload
