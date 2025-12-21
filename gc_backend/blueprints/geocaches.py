@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request, Response, stream_with_context
 import logging
 import io
+import time
 import zipfile
 import xml.etree.ElementTree as ET
 import json
@@ -9,11 +10,73 @@ from ..database import db
 from ..geocaches.models import Geocache
 from ..geocaches.importer import GeocacheImporter
 from ..geocaches.scraper import GeocachingScraper
+from ..geocaches.search_client import GeocachingSearchClient
 from ..geocaches.image_storage import remove_geocache_dir
 from ..geocaches.image_sync import ensure_images_v2_for_geocache
 
 bp = Blueprint('geocaches', __name__)
 logger = logging.getLogger(__name__)
+
+def _get_center_from_request_payload(data: dict) -> tuple[float, float]:
+    center = data.get('center') if isinstance(data, dict) else None
+    if isinstance(center, dict):
+        center_type = (center.get('type') or '').strip().lower()
+        if center_type == 'point':
+            lat = center.get('lat')
+            lon = center.get('lon')
+            if lat is not None and lon is not None:
+                return float(lat), float(lon)
+
+        if center_type == 'geocache_id':
+            geocache_id = center.get('geocache_id')
+            if geocache_id is not None:
+                geocache = Geocache.query.get(int(geocache_id))
+                if not geocache:
+                    raise LookupError('geocache_not_found')
+                if geocache.latitude is None or geocache.longitude is None:
+                    raise ValueError('geocache_has_no_coordinates')
+                return float(geocache.latitude), float(geocache.longitude)
+
+        if center_type == 'gc_code':
+            gc_code = (center.get('gc_code') or '').strip().upper()
+            if gc_code:
+                existing = Geocache.query.filter(Geocache.gc_code == gc_code).first()
+                if existing and existing.latitude is not None and existing.longitude is not None:
+                    return float(existing.latitude), float(existing.longitude)
+
+                scraper = GeocachingScraper()
+                scraped = scraper.scrape(gc_code)
+                if scraped.latitude is None or scraped.longitude is None:
+                    raise ValueError('geocache_has_no_coordinates')
+                return float(scraped.latitude), float(scraped.longitude)
+
+        lat = center.get('lat')
+        lon = center.get('lon')
+        if lat is not None and lon is not None:
+            return float(lat), float(lon)
+
+    geocache_id = data.get('geocache_id')
+    if geocache_id is not None:
+        geocache = Geocache.query.get(int(geocache_id))
+        if not geocache:
+            raise LookupError('geocache_not_found')
+        if geocache.latitude is None or geocache.longitude is None:
+            raise ValueError('geocache_has_no_coordinates')
+        return float(geocache.latitude), float(geocache.longitude)
+
+    gc_code = (data.get('gc_code') or '').strip().upper()
+    if gc_code:
+        existing = Geocache.query.filter(Geocache.gc_code == gc_code).first()
+        if existing and existing.latitude is not None and existing.longitude is not None:
+            return float(existing.latitude), float(existing.longitude)
+
+        scraper = GeocachingScraper()
+        scraped = scraper.scrape(gc_code)
+        if scraped.latitude is None or scraped.longitude is None:
+            raise ValueError('geocache_has_no_coordinates')
+        return float(scraped.latitude), float(scraped.longitude)
+
+    raise ValueError('missing_center')
 
 
 @bp.get('/api/zones/<int:zone_id>/geocaches')
@@ -55,6 +118,116 @@ def get_geocaches_for_zone(zone_id: int):
     except Exception as e:
         logger.error(f"Error fetching geocaches for zone {zone_id}: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@bp.post('/api/geocaches/import-around')
+def import_around():
+    """Importe plusieurs géocaches autour d'un point ou d'une géocache.
+
+    Réponse en streaming JSON (une ligne = un objet JSON) compatible avec le frontend.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+
+        zone_id = data.get('zone_id')
+        if not zone_id:
+            return jsonify({'error': 'Missing required field: zone_id'}), 400
+        try:
+            zone_id = int(zone_id)
+        except ValueError:
+            return jsonify({'error': 'Invalid zone_id'}), 400
+
+        try:
+            center_lat, center_lon = _get_center_from_request_payload(data)
+        except LookupError as e:
+            if 'geocache_not_found' in str(e):
+                return jsonify({'error': 'Geocache not found'}), 404
+            return jsonify({'error': str(e)}), 400
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+
+        limit = data.get('limit', 50)
+        radius_km = data.get('radius_km')
+        try:
+            limit = int(limit)
+        except ValueError:
+            return jsonify({'error': 'Invalid limit'}), 400
+
+        if radius_km is not None and str(radius_km).strip() != '':
+            try:
+                radius_km = float(radius_km)
+            except ValueError:
+                return jsonify({'error': 'Invalid radius_km'}), 400
+        else:
+            radius_km = None
+
+        if limit <= 0:
+            return jsonify({'error': 'limit must be > 0'}), 400
+        if radius_km is not None and radius_km <= 0:
+            return jsonify({'error': 'radius_km must be > 0'}), 400
+
+        importer = GeocacheImporter()
+        search_client = GeocachingSearchClient(session=importer.scraper.session)
+
+        def generate():
+            try:
+                yield json.dumps({'message': 'Recherche des géocaches autour...', 'progress': 0}) + '\n'
+
+                results = search_client.search(
+                    center_lat=center_lat,
+                    center_lon=center_lon,
+                    limit=limit,
+                    radius_km=radius_km,
+                )
+                gc_codes = [r.gc_code for r in results]
+                total = len(gc_codes)
+
+                if total == 0:
+                    yield json.dumps({'error': True, 'message': 'Aucune géocache trouvée'}) + '\n'
+                    return
+
+                yield json.dumps({'message': f'{total} géocache(s) trouvée(s)', 'progress': 10}) + '\n'
+                yield json.dumps({'message': f'Import de {total} géocache(s)...', 'progress': 15}) + '\n'
+
+                success = 0
+                errors = 0
+
+                for idx, code in enumerate(gc_codes, start=1):
+                    try:
+                        importer.import_by_code(zone_id, code)
+                        success += 1
+                        msg = f'Importée: {code} ({idx}/{total})'
+                    except Exception as e:
+                        errors += 1
+                        msg = f'Erreur {code}: {e}'
+
+                    pct = 15 + int(idx / total * 85)
+                    yield json.dumps({'message': msg, 'progress': pct}) + '\n'
+
+                    time.sleep(0.2)
+
+                summary = f'Importation terminée: {success} succès'
+                if errors:
+                    summary += f', {errors} erreurs'
+
+                yield json.dumps({
+                    'progress': 100,
+                    'message': summary,
+                    'final_summary': True,
+                    'stats': {'success': success, 'errors': errors, 'total': total},
+                    'center': {'lat': center_lat, 'lon': center_lon},
+                    **({'radius_km': radius_km} if radius_km is not None else {}),
+                }) + '\n'
+
+            except Exception as e:
+                logger.error(f"Erreur import-around: {e}", exc_info=True)
+                yield json.dumps({'error': True, 'message': f'Erreur: {str(e)}'}) + '\n'
+
+        return Response(stream_with_context(generate()), content_type='application/json')
+
+    except Exception as e:
+        logger.error(f"Erreur lors de l'import-around: {e}", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @bp.get('/api/geocaches/<int:geocache_id>')
