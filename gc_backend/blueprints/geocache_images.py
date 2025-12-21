@@ -33,6 +33,51 @@ _ALLOWED_RENDERED_MIME_TYPES = {
 }
 
 
+def _get_root_image(image: GeocacheImage) -> GeocacheImage:
+    current = image
+    visited = set()
+    while current.parent_image_id:
+        if current.id in visited:
+            break
+        visited.add(current.id)
+        parent = GeocacheImage.query.get(current.parent_image_id)
+        if not parent:
+            break
+        current = parent
+    return current
+
+
+def _next_derivation_type(source: GeocacheImage, parent_image_id: int, base: str) -> str:
+    existing_types = (
+        db.session.query(GeocacheImage.derivation_type)
+        .filter_by(
+            geocache_id=source.geocache_id,
+            source_url=source.source_url,
+            parent_image_id=parent_image_id,
+        )
+        .all()
+    )
+    used = {row[0] for row in existing_types if row and row[0]}
+    if base not in used:
+        return base
+
+    max_suffix = 1
+    for derivation_type in used:
+        if not derivation_type.startswith(base):
+            continue
+        suffix = derivation_type[len(base):]
+        if not suffix:
+            max_suffix = max(max_suffix, 1)
+            continue
+        if suffix.isdigit():
+            max_suffix = max(max_suffix, int(suffix))
+
+    candidate = f"{base}{max_suffix + 1}"
+    if len(candidate) > 20:
+        return base
+    return candidate
+
+
 def _safe_resolve_stored_file(stored_path: str) -> Path:
     root = get_images_root_dir().resolve()
     full_path = (root / stored_path).resolve()
@@ -134,7 +179,9 @@ def create_geocache_image_edit(source_image_id: int):
     if not source:
         return jsonify({'error': 'Image not found'}), 404
 
-    existing = GeocacheImage.query.filter_by(parent_image_id=source.id, derivation_type='edited').first()
+    root = _get_root_image(source)
+
+    existing = GeocacheImage.query.filter_by(parent_image_id=root.id, derivation_type='edited').first()
     if existing is not None:
         return jsonify({'error': 'Edited image already exists', 'existing_image_id': existing.id}), 409
 
@@ -155,9 +202,9 @@ def create_geocache_image_edit(source_image_id: int):
     content, content_type = upload
 
     derived = GeocacheImage(
-        geocache_id=source.geocache_id,
-        source_url=source.source_url,
-        parent_image_id=source.id,
+        geocache_id=root.geocache_id,
+        source_url=root.source_url,
+        parent_image_id=root.id,
         derivation_type='edited',
         title=title,
         editor_state_json=editor_state_json,
@@ -173,7 +220,7 @@ def create_geocache_image_edit(source_image_id: int):
             image_id=derived.id,
             content=content,
             content_type=content_type,
-            source_url=source.source_url,
+            source_url=root.source_url,
         )
 
         derived.stored = True
@@ -190,6 +237,67 @@ def create_geocache_image_edit(source_image_id: int):
         return jsonify({'error': 'Failed to create edited image'}), 500
 
 
+@bp.post('/api/geocache-images/<int:source_image_id>/edits/new')
+def create_geocache_image_edit_new(source_image_id: int):
+    source = GeocacheImage.query.get(source_image_id)
+    if not source:
+        return jsonify({'error': 'Image not found'}), 404
+
+    root = _get_root_image(source)
+    derivation_type = _next_derivation_type(root, root.id, 'edited')
+
+    upload, error_response, status_code = _get_uploaded_rendered_file()
+    if error_response is not None:
+        return error_response, status_code
+
+    editor_state_json = request.form.get('editor_state_json')
+    if editor_state_json is not None:
+        if len(editor_state_json.encode('utf-8')) > _MAX_EDITOR_STATE_BYTES:
+            return jsonify({'error': 'editor_state_json is too large'}), 413
+        try:
+            json.loads(editor_state_json)
+        except json.JSONDecodeError:
+            return jsonify({'error': 'editor_state_json must be valid JSON'}), 400
+    title = request.form.get('title')
+
+    content, content_type = upload
+
+    derived = GeocacheImage(
+        geocache_id=root.geocache_id,
+        source_url=root.source_url,
+        parent_image_id=root.id,
+        derivation_type=derivation_type,
+        title=title,
+        editor_state_json=editor_state_json,
+        stored=False,
+    )
+
+    try:
+        db.session.add(derived)
+        db.session.flush()
+
+        stored_path, mime_type, byte_size, sha256 = write_image_file(
+            geocache_id=derived.geocache_id,
+            image_id=derived.id,
+            content=content,
+            content_type=content_type,
+            source_url=root.source_url,
+        )
+
+        derived.stored = True
+        derived.stored_path = stored_path
+        derived.mime_type = mime_type
+        derived.byte_size = byte_size
+        derived.sha256 = sha256
+
+        db.session.commit()
+        return jsonify(derived.to_dict())
+    except Exception as exc:
+        logger.error('Failed to create edit (new) for image %s: %s', source_image_id, exc, exc_info=True)
+        db.session.rollback()
+        return jsonify({'error': 'Failed to create edited image'}), 500
+
+
 @bp.put('/api/geocache-images/<int:image_id>/edits')
 def update_geocache_image_edit(image_id: int):
     image = GeocacheImage.query.get(image_id)
@@ -199,7 +307,7 @@ def update_geocache_image_edit(image_id: int):
     if not image.parent_image_id:
         return jsonify({'error': 'Only derived images can be overwritten'}), 400
 
-    if image.derivation_type != 'edited':
+    if not image.derivation_type or not image.derivation_type.startswith('edited'):
         return jsonify({'error': 'Only edited derived images can be overwritten'}), 400
 
     upload, error_response, status_code = _get_uploaded_rendered_file()
@@ -243,6 +351,62 @@ def update_geocache_image_edit(image_id: int):
         logger.error('Failed to update edited image %s: %s', image_id, exc, exc_info=True)
         db.session.rollback()
         return jsonify({'error': 'Failed to update edited image'}), 500
+
+
+@bp.post('/api/geocache-images/<int:image_id>/duplicate')
+def duplicate_geocache_image(image_id: int):
+    source = GeocacheImage.query.get(image_id)
+    if not source:
+        return jsonify({'error': 'Image not found'}), 404
+
+    derivation_type = _next_derivation_type(source, source.id, 'copy')
+    duplicated = GeocacheImage(
+        geocache_id=source.geocache_id,
+        source_url=source.source_url,
+        parent_image_id=source.id,
+        derivation_type=derivation_type,
+        crop_rect=source.crop_rect,
+        editor_state_json=source.editor_state_json,
+        title=(f"{source.title} copy" if source.title else None),
+        note=source.note,
+        tags=source.tags,
+        detected_features=source.detected_features,
+        qr_payload=source.qr_payload,
+        ocr_text=source.ocr_text,
+        ocr_language=source.ocr_language,
+        stored=False,
+    )
+
+    try:
+        db.session.add(duplicated)
+        db.session.flush()
+
+        if source.stored and source.stored_path:
+            try:
+                file_path = _safe_resolve_stored_file(source.stored_path)
+                content = file_path.read_bytes()
+                content_type = (source.mime_type or 'image/png').split(';')[0].strip().lower()
+                stored_path, mime_type, byte_size, sha256 = write_image_file(
+                    geocache_id=duplicated.geocache_id,
+                    image_id=duplicated.id,
+                    content=content,
+                    content_type=content_type,
+                    source_url=source.source_url,
+                )
+                duplicated.stored = True
+                duplicated.stored_path = stored_path
+                duplicated.mime_type = mime_type
+                duplicated.byte_size = byte_size
+                duplicated.sha256 = sha256
+            except Exception as exc:
+                logger.warning('Failed to duplicate stored file for image %s: %s', image_id, exc)
+
+        db.session.commit()
+        return jsonify(duplicated.to_dict())
+    except Exception as exc:
+        logger.error('Failed to duplicate image %s: %s', image_id, exc, exc_info=True)
+        db.session.rollback()
+        return jsonify({'error': 'Failed to duplicate image'}), 500
 
 
 @bp.post('/api/geocache-images/<int:image_id>/store')

@@ -144,6 +144,60 @@ class TestGeocacheImageEdits:
         assert payload['error'] == 'Edited image already exists'
         assert 'existing_image_id' in payload
 
+    def test_create_edit_new_always_creates_new_variant(self, client, app, seed_data):
+        resp1 = client.post(
+            f"/api/geocache-images/{seed_data['original_image_id']}/edits",
+            data={
+                'editor_state_json': json.dumps({'objects': []}),
+                'rendered_file': (io.BytesIO(_make_png_bytes()), 'render.png', 'image/png'),
+            },
+            content_type='multipart/form-data',
+        )
+        assert resp1.status_code == 200
+
+        resp2 = client.post(
+            f"/api/geocache-images/{seed_data['original_image_id']}/edits/new",
+            data={
+                'editor_state_json': json.dumps({'objects': [{'type': 'circle'}]}),
+                'rendered_file': (io.BytesIO(_make_png_bytes()), 'render.png', 'image/png'),
+            },
+            content_type='multipart/form-data',
+        )
+        assert resp2.status_code == 200
+        payload2 = json.loads(resp2.data)
+        assert payload2['parent_image_id'] == seed_data['original_image_id']
+        assert payload2['derivation_type'].startswith('edited')
+
+        with app.app_context():
+            derived2 = GeocacheImage.query.get(payload2['id'])
+            assert derived2 is not None
+            assert derived2.derivation_type.startswith('edited')
+            assert derived2.parent_image_id == seed_data['original_image_id']
+
+    def test_duplicate_creates_copy_variant(self, client, app, seed_data):
+        create_resp = client.post(
+            f"/api/geocache-images/{seed_data['original_image_id']}/edits",
+            data={
+                'editor_state_json': json.dumps({'objects': []}),
+                'rendered_file': (io.BytesIO(_make_png_bytes()), 'render.png', 'image/png'),
+            },
+            content_type='multipart/form-data',
+        )
+        assert create_resp.status_code == 200
+        derived_id = json.loads(create_resp.data)['id']
+
+        dup_resp = client.post(f"/api/geocache-images/{derived_id}/duplicate")
+        assert dup_resp.status_code == 200
+        payload = json.loads(dup_resp.data)
+        assert payload['parent_image_id'] == derived_id
+        assert payload['derivation_type'].startswith('copy')
+
+        with app.app_context():
+            duplicated = GeocacheImage.query.get(payload['id'])
+            assert duplicated is not None
+            assert duplicated.parent_image_id == derived_id
+            assert duplicated.derivation_type.startswith('copy')
+
     def test_update_edit_updates_existing_derived_image(self, client, app, seed_data):
         resp1 = client.post(
             f"/api/geocache-images/{seed_data['original_image_id']}/edits",
