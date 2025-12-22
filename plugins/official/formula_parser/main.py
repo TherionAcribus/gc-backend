@@ -193,10 +193,15 @@ class FormulaParserPlugin:
         patterns = [
             # Format avec degrés/minutes fixes + expressions parenthésées : N49°12.(A/G-238)(I-135)(D/J-1)
             r"[NS]\s*\d{1,2}\s*°\s*\d{1,2}\.\s*(\([A-Z0-9()+*/\-\s]+\)\s*)+",
+
+            # Format avec tokens mixtes après le point : N48°45.B(A+E)(D+C)
+            # (lettres/chiffres et/ou groupes parenthésés en séquence)
+            r"[NS]\s*\d{1,2}\s*°\s*\d{1,2}\.\s*(?:[A-Z0-9]+|\([A-Z0-9()+*/\-\s]+\))+",
+
             # Format classique : N48°12.345
             r"[NS]\s*\d{1,2}\s*°\s*\d{1,2}\.\s*\d{1,3}",
             # Format avec variables simples : N48°12.ABC
-            r"[NS]\s*\d{1,2}\s*°\s*\d{1,2}\.\s*[A-Z]{1,5}",
+            r"[NS]\s*\d{1,2}\s*°\s*\d{1,2}\.\s*[A-Z]{1,5}(?!\s*\()",
             # Format avec opérations : N48°(A+B).(C-D)
             r"[NS]\s*\d{1,2}\s*°\s*[A-Z0-9()+*/\-\s]{1,15}\.\s*[A-Z0-9()+*/\-\s]{1,15}",
             # Format avec espaces entre lettres : N 48° 41.E D B
@@ -222,10 +227,15 @@ class FormulaParserPlugin:
         patterns = [
             # Format avec degrés/minutes fixes + expressions parenthésées : E005°59.(C-B)(H-K+1)(F-E-135)
             r"[EW]\s*\d{1,3}\s*°\s*\d{1,2}\.\s*(\([A-Z0-9()+*/\-\s]+\)\s*)+",
+
+            # Format avec tokens mixtes après le point : E002°43.C(F+C)D
+            # (lettres/chiffres et/ou groupes parenthésés en séquence)
+            r"[EW]\s*\d{1,3}\s*°\s*\d{1,2}\.\s*(?:[A-Z0-9]+|\([A-Z0-9()+*/\-\s]+\))+",
+
             # Format classique : E006°12.345
             r"[EW]\s*\d{1,3}\s*°\s*\d{1,2}\.\s*\d{1,3}",
             # Format avec variables simples : E006°12.ABC
-            r"[EW]\s*\d{1,3}\s*°\s*\d{1,2}\.\s*[A-Z]{1,5}",
+            r"[EW]\s*\d{1,3}\s*°\s*\d{1,2}\.\s*[A-Z]{1,5}(?!\s*\()",
             # Format avec opérations : E006°(A+B).(C-D)
             r"[EW]\s*\d{1,3}\s*°\s*[A-Z0-9()+*/\-\s]{1,15}\.\s*[A-Z0-9()+*/\-\s]{1,15}",
             # Format avec espaces et parenthèses : E 006° 09. F C (A / 2)

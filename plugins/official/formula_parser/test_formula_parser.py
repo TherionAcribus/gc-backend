@@ -155,6 +155,16 @@ class TestFormulaParser:
         assert "(H-K+1)" in result["results"][0]["east"]
         assert "(F-E-135)" in result["results"][0]["east"]
 
+    def test_format_tokens_mixtes_apres_point(self):
+        """Test 14 : Décimales avec tokens mixtes (lettre + parenthèses) sans troncature"""
+        text = "N48°45.B(A+E)(D+C) E002°43.C(F+C)D"
+        result = self.plugin.execute({"text": text})
+
+        assert result["status"] == "success"
+        assert len(result["results"]) == 1
+        assert "B(A+E)(D+C)" in result["results"][0]["north"]
+        assert "C(F+C)D" in result["results"][0]["east"]
+
 
 class TestBasicClean:
     """Tests de la méthode _basic_clean"""
