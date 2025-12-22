@@ -243,6 +243,26 @@ class TestFormulaQuestionsService:
         assert 'Question M' in result['M']
         assert 'Question Z' in result['Z']
 
+    def test_format_lettre_fin_de_ligne_parentheses(self):
+        """Test 13 : Lettre en fin de ligne entre parenthèses (Question ... (A) ?)"""
+        text = """
+        Coté artistique qui fut le premier chanteur à faire l'ouverture du Festival (A) ?
+        Quelle fut la date exacte où est passé sur scène le groupe Creedence  Clearwater Revival (B)?
+        Le samedi nous avons eu la joie d'entendre Janis Joplin à quel age est-elle décédée (C) ?
+        Nous avons aussi écouté le père de Norah Jones, quel est son nom (D)?
+        Nous avons aussi  entendu un groupe de rock britannique créé à Londres en 1964 composé du guitariste Pete Townshend quel est son nom (E) ?
+        Pour finir ce festival, qui de mieux que le grand Jimi Hendrix, quelle fut la date de sa mort (F)?
+        """
+
+        result = self.service.extract_questions_with_regex(text, ['A', 'B', 'C', 'D', 'E', 'F'])
+
+        assert "premier chanteur" in result['A'].lower()
+        assert "creedence" in result['B'].lower()
+        assert "janis joplin" in result['C'].lower()
+        assert "norah jones" in result['D'].lower()
+        assert "pete townshend" in result['E'].lower()
+        assert "jimi hendrix" in result['F'].lower()
+
 
 class TestCleanHTML:
     """Tests de la méthode _clean_html"""

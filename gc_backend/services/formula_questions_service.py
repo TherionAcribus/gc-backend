@@ -81,6 +81,11 @@ class FormulaQuestionsService:
             # Format: 1. (A) Question?
             # Exemple: "1. (A) Combien de fenêtres?"
             rf'(?:^|\n)\s*\d+\s*{separators_class}\s*\(({letters_pattern})\)\s*(.*?)(?=\n\s*\d+\s*{separators_class}|\n\s*[A-Z]\s*{separators_class}|$)',
+
+            # Format: Question ... (A) ?  (la lettre en fin de ligne, entre parenthèses)
+            # Exemple: "Coté artistique ... (A) ?"
+            # Note: On limite volontairement à une seule ligne pour éviter les faux positifs.
+            rf'(?:^|\n)\s*([^\n]{5,200}?)\s*\(\s*({letters_pattern})\s*\)\s*[?!\.…]*\s*(?=\n|$)',
             
             # Format: Question A:  (la lettre après le texte) - DERNIÈRE PRIORITÉ
             # Exemple: "Nombre de fenêtres A:"
@@ -99,8 +104,9 @@ class FormulaQuestionsService:
                 logger.debug(f"Match trouvé: groupes={match.groups()}, span={match.span()}")
                 if len(match.groups()) >= 2:
                     # Déterminer quelle groupe contient la lettre et lequel contient la question
-                    if pattern_idx == 2:  # Pattern "Question A:" (dernier)
-                        # Pour ce format, la question est le premier groupe
+                    if pattern_idx in (2, 3):
+                        # Pour les formats où la lettre est après le texte (fin de ligne),
+                        # la question est le premier groupe.
                         question = match.group(1).strip()
                         letter = match.group(2).upper()
                         
@@ -120,8 +126,8 @@ class FormulaQuestionsService:
                         if not result[letter]:
                             result[letter] = question
                             logger.debug(f"Question trouvée pour {letter}: {question[:50]}...")
-                        elif len(question) > len(result[letter]) and pattern_idx < 2:
-                            # Seulement remplacer si plus long et pas le pattern "Question A:"
+                        elif len(question) > len(result[letter]) and pattern_idx < 3:
+                            # Seulement remplacer si plus long et pas les formats fin-de-ligne
                             result[letter] = question
                             logger.debug(f"Question mise à jour pour {letter}: {question[:50]}...")
                     else:
