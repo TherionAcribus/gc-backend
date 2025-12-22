@@ -559,6 +559,48 @@ def unstore_geocache_image(image_id: int):
         return jsonify({'error': 'Failed to unstore image'}), 500
 
 
+@bp.delete('/api/geocache-images/<int:image_id>')
+def delete_geocache_image(image_id: int):
+    image = GeocacheImage.query.get(image_id)
+    if not image:
+        return jsonify({'error': 'Image not found'}), 404
+
+    root = _get_root_image(image)
+    if not (root.source_url or '').startswith('geoapp-upload://'):
+        return jsonify({'error': 'Only uploaded images can be deleted'}), 400
+
+    visited: set[int] = set()
+    stack = [image]
+    images_to_delete: list[GeocacheImage] = []
+
+    while stack:
+        current = stack.pop()
+        if current.id in visited:
+            continue
+        visited.add(current.id)
+        images_to_delete.append(current)
+        children = GeocacheImage.query.filter_by(parent_image_id=current.id).all()
+        stack.extend(children)
+
+    try:
+        for current in reversed(images_to_delete):
+            if current.stored_path:
+                try:
+                    full_path = _safe_resolve_stored_file(current.stored_path)
+                    if full_path.exists() and full_path.is_file():
+                        full_path.unlink()
+                except Exception as exc:
+                    logger.warning('Failed to delete stored file for image %s: %s', current.id, exc)
+            db.session.delete(current)
+
+        db.session.commit()
+        return jsonify({'deleted': sorted(visited)}), 200
+    except Exception as exc:
+        logger.error('Failed to delete image %s: %s', image_id, exc, exc_info=True)
+        db.session.rollback()
+        return jsonify({'error': 'Failed to delete image'}), 500
+
+
 @bp.post('/api/geocaches/<int:geocache_id>/images/store')
 def store_all_geocache_images(geocache_id: int):
     geocache = Geocache.query.get(geocache_id)
