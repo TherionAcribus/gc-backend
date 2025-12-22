@@ -113,11 +113,18 @@ class VisionOCRPlugin:
                     timeout_sec=90,
                 )
             except Exception as exc:  # pragma: no cover
-                logger.warning("[vision_ocr] Vision OCR failed for %s: %s", full_url, exc)
+                logger.warning("[vision_ocr] Vision OCR failed for {}: {}", full_url, exc)
                 continue
 
             text = (ocr.text or "").strip()
-            if not text:
+            try:
+                from gc_backend.services.ocr.lmstudio_vision_service import strip_thinking_blocks
+
+                text = strip_thinking_blocks(text)
+            except Exception:
+                pass
+
+            if not text.strip():
                 continue
 
             findings.append(
@@ -270,7 +277,7 @@ class VisionOCRPlugin:
                 return None
             return res.content
         except Exception as exc:  # pragma: no cover
-            logger.warning("[vision_ocr] Failed to fetch %s: %s", url, exc)
+            logger.warning("[vision_ocr] Failed to fetch {}: {}", url, exc)
             return None
 
 

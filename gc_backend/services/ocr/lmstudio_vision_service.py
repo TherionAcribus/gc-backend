@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -30,6 +31,23 @@ class VisionOcrResult:
     text: str
     provider: str
     model: str
+
+
+def strip_thinking_blocks(text: str) -> str:
+    """Remove model 'thinking' blocks from a response.
+
+    Some local models emit reasoning using markers like [THINK]...[/THINK] or <think>...</think>.
+    We strip them so only the final OCR transcription is kept.
+    """
+    if not text:
+        return ""
+
+    cleaned = text
+    cleaned = re.sub(r"\[THINK\].*?\[/THINK\]", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"\[ANALYSIS\].*?\[/ANALYSIS\]", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"<analysis>.*?</analysis>", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    return cleaned.strip()
 
 
 def normalize_lmstudio_base_url(base_url: str) -> str:
@@ -134,6 +152,7 @@ def vision_ocr_via_lmstudio(
         raise RuntimeError(f"LMStudio returned invalid JSON: {exc} ({res.text[:500]})") from exc
 
     text = extract_text_from_openai_response(data).strip()
+    text = strip_thinking_blocks(text)
     if not text:
         raise RuntimeError("LMStudio returned an empty response")
 
