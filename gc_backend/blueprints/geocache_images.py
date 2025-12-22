@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from pathlib import Path
 from typing import Any, Dict
 
 from flask import Blueprint, jsonify, request, send_file
+from werkzeug.utils import secure_filename
 
 from ..database import db
 from ..geocaches.image_storage import (
@@ -173,6 +175,35 @@ def _get_uploaded_rendered_file():
     return (content, content_type), None, None
 
 
+def _get_uploaded_image_file():
+    uploaded = request.files.get('image_file')
+    if not uploaded:
+        return None, jsonify({'error': 'image_file is required'}), 400
+
+    content = uploaded.read(_MAX_RENDERED_FILE_BYTES + 1)
+    if not content:
+        return None, jsonify({'error': 'image_file is empty'}), 400
+    if len(content) > _MAX_RENDERED_FILE_BYTES:
+        return None, jsonify({'error': 'image_file is too large'}), 413
+
+    content_type = (uploaded.mimetype or request.form.get('mime_type') or '').split(';')[0].strip().lower()
+    if content_type not in _ALLOWED_RENDERED_MIME_TYPES:
+        return None, jsonify({'error': 'Unsupported mime type'}), 400
+
+    is_png = content.startswith(b'\x89PNG\r\n\x1a\n')
+    is_jpeg = content.startswith(b'\xff\xd8')
+    is_webp = content.startswith(b'RIFF') and len(content) > 12 and content[8:12] == b'WEBP'
+    if content_type == 'image/png' and not is_png:
+        return None, jsonify({'error': 'Invalid PNG file'}), 400
+    if content_type in {'image/jpeg', 'image/jpg'} and not is_jpeg:
+        return None, jsonify({'error': 'Invalid JPEG file'}), 400
+    if content_type == 'image/webp' and not is_webp:
+        return None, jsonify({'error': 'Invalid WEBP file'}), 400
+
+    filename = secure_filename(uploaded.filename or '')
+    return (content, content_type, filename), None, None
+
+
 @bp.post('/api/geocache-images/<int:source_image_id>/edits')
 def create_geocache_image_edit(source_image_id: int):
     source = GeocacheImage.query.get(source_image_id)
@@ -235,6 +266,60 @@ def create_geocache_image_edit(source_image_id: int):
         logger.error('Failed to create edit for image %s: %s', source_image_id, exc, exc_info=True)
         db.session.rollback()
         return jsonify({'error': 'Failed to create edited image'}), 500
+
+
+@bp.post('/api/geocaches/<int:geocache_id>/images/upload')
+def upload_geocache_image(geocache_id: int):
+    geocache = Geocache.query.get(geocache_id)
+    if not geocache:
+        return jsonify({'error': 'Geocache not found'}), 404
+
+    upload, error_response, status_code = _get_uploaded_image_file()
+    if error_response is not None:
+        return error_response, status_code
+
+    title = request.form.get('title')
+    note = request.form.get('note')
+
+    content, content_type, filename = upload
+    filename_part = filename or 'upload'
+    pending_source_url = f'geoapp-upload://{geocache_id}/pending/{uuid.uuid4().hex}/{filename_part}'
+
+    image = GeocacheImage(
+        geocache_id=geocache_id,
+        source_url=pending_source_url,
+        derivation_type='manual',
+        title=title,
+        note=note,
+        stored=False,
+    )
+
+    try:
+        db.session.add(image)
+        db.session.flush()
+
+        image.source_url = f'geoapp-upload://{geocache_id}/{image.id}/{filename_part}'
+
+        stored_path, mime_type, byte_size, sha256 = write_image_file(
+            geocache_id=image.geocache_id,
+            image_id=image.id,
+            content=content,
+            content_type=content_type,
+            source_url=image.source_url,
+        )
+
+        image.stored = True
+        image.stored_path = stored_path
+        image.mime_type = mime_type
+        image.byte_size = byte_size
+        image.sha256 = sha256
+
+        db.session.commit()
+        return jsonify(image.to_dict())
+    except Exception as exc:
+        logger.error('Failed to upload image for geocache %s: %s', geocache_id, exc, exc_info=True)
+        db.session.rollback()
+        return jsonify({'error': 'Failed to upload image'}), 500
 
 
 @bp.post('/api/geocache-images/<int:source_image_id>/edits/new')
