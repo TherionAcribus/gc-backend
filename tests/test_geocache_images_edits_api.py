@@ -198,6 +198,44 @@ class TestGeocacheImageEdits:
             assert duplicated.parent_image_id == derived_id
             assert duplicated.derivation_type.startswith('copy')
 
+    def test_create_snippet_new_creates_variant_and_stores_crop_rect(self, client, app, seed_data):
+        crop1 = {'left': 10, 'top': 12, 'width': 80, 'height': 50}
+        resp1 = client.post(
+            f"/api/geocache-images/{seed_data['original_image_id']}/snippets/new",
+            data={
+                'crop_rect_json': json.dumps(crop1),
+                'rendered_file': (io.BytesIO(_make_png_bytes()), 'snippet.png', 'image/png'),
+            },
+            content_type='multipart/form-data',
+        )
+        assert resp1.status_code == 200
+        payload1 = json.loads(resp1.data)
+        assert payload1['parent_image_id'] == seed_data['original_image_id']
+        assert payload1['derivation_type'].startswith('snippet')
+
+        crop2 = {'left': 0, 'top': 0, 'width': 12, 'height': 12}
+        resp2 = client.post(
+            f"/api/geocache-images/{seed_data['original_image_id']}/snippets/new",
+            data={
+                'crop_rect_json': json.dumps(crop2),
+                'rendered_file': (io.BytesIO(_make_png_bytes()), 'snippet.png', 'image/png'),
+            },
+            content_type='multipart/form-data',
+        )
+        assert resp2.status_code == 200
+        payload2 = json.loads(resp2.data)
+        assert payload2['parent_image_id'] == seed_data['original_image_id']
+        assert payload2['derivation_type'].startswith('snippet')
+        assert payload2['id'] != payload1['id']
+
+        with app.app_context():
+            img1 = GeocacheImage.query.get(payload1['id'])
+            img2 = GeocacheImage.query.get(payload2['id'])
+            assert img1 is not None
+            assert img2 is not None
+            assert img1.crop_rect == crop1
+            assert img2.crop_rect == crop2
+
     def test_update_edit_updates_existing_derived_image(self, client, app, seed_data):
         resp1 = client.post(
             f"/api/geocache-images/{seed_data['original_image_id']}/edits",

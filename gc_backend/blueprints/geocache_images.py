@@ -322,6 +322,70 @@ def upload_geocache_image(geocache_id: int):
         return jsonify({'error': 'Failed to upload image'}), 500
 
 
+@bp.post('/api/geocache-images/<int:source_image_id>/snippets/new')
+def create_geocache_image_snippet_new(source_image_id: int):
+    source = GeocacheImage.query.get(source_image_id)
+    if not source:
+        return jsonify({'error': 'Image not found'}), 404
+
+    derivation_type = _next_derivation_type(source, source.id, 'snippet')
+
+    upload, error_response, status_code = _get_uploaded_rendered_file()
+    if error_response is not None:
+        return error_response, status_code
+
+    title = request.form.get('title')
+
+    crop_rect_json = request.form.get('crop_rect_json')
+    crop_rect = None
+    if crop_rect_json is not None:
+        if len(crop_rect_json.encode('utf-8')) > 16 * 1024:
+            return jsonify({'error': 'crop_rect_json is too large'}), 413
+        try:
+            crop_rect = json.loads(crop_rect_json)
+        except json.JSONDecodeError:
+            return jsonify({'error': 'crop_rect_json must be valid JSON'}), 400
+        if crop_rect is not None and not isinstance(crop_rect, dict):
+            return jsonify({'error': 'crop_rect_json must be an object'}), 400
+
+    content, content_type = upload
+
+    derived = GeocacheImage(
+        geocache_id=source.geocache_id,
+        source_url=source.source_url,
+        parent_image_id=source.id,
+        derivation_type=derivation_type,
+        title=title,
+        crop_rect=crop_rect,
+        stored=False,
+    )
+
+    try:
+        db.session.add(derived)
+        db.session.flush()
+
+        stored_path, mime_type, byte_size, sha256 = write_image_file(
+            geocache_id=derived.geocache_id,
+            image_id=derived.id,
+            content=content,
+            content_type=content_type,
+            source_url=source.source_url,
+        )
+
+        derived.stored = True
+        derived.stored_path = stored_path
+        derived.mime_type = mime_type
+        derived.byte_size = byte_size
+        derived.sha256 = sha256
+
+        db.session.commit()
+        return jsonify(derived.to_dict())
+    except Exception as exc:
+        logger.error('Failed to create snippet (new) for image %s: %s', source_image_id, exc, exc_info=True)
+        db.session.rollback()
+        return jsonify({'error': 'Failed to create snippet image'}), 500
+
+
 @bp.post('/api/geocache-images/<int:source_image_id>/edits/new')
 def create_geocache_image_edit_new(source_image_id: int):
     source = GeocacheImage.query.get(source_image_id)
