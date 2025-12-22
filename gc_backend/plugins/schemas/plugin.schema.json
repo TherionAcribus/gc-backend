@@ -227,7 +227,7 @@
     "output_types": {
       "type": "object",
       "description": "Définition des types de sortie (legacy, optionnel)"
-    }
+    },
     "pipeline": {
       "type": "array",
       "description": "Configuration du pipeline d'analyse pour les méta-plugins",

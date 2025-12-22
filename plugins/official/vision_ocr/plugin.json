@@ -1,0 +1,52 @@
+{
+  "name": "vision_ocr",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "OCR IA (vision) via endpoint OpenAI-compatible (LMStudio) sur images de géocache",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": ["requests"],
+  "categories": ["Analysis", "Image", "AI"],
+  "kinds": ["image", "analyze"],
+  "brute_force": false,
+  "heavy_cpu": false,
+  "needs_network": true,
+  "needs_filesystem": false,
+  "timeout_seconds": 90,
+  "input_types": {
+    "geocache_id": {
+      "type": "string",
+      "label": "ID de la géocache",
+      "required": true,
+      "default_value_source": "geocache_id"
+    },
+    "base_url": {
+      "type": "string",
+      "label": "LMStudio base URL",
+      "required": false,
+      "placeholder": "http://localhost:1234"
+    },
+    "model": {
+      "type": "string",
+      "label": "Modèle vision",
+      "required": false,
+      "placeholder": "ex: llava, qwen2-vl, ..."
+    },
+    "language": {
+      "type": "select",
+      "label": "Langue (indicative)",
+      "required": false,
+      "options": [
+        {"value": "auto", "label": "Auto"},
+        {"value": "fr", "label": "Français"},
+        {"value": "en", "label": "Anglais"}
+      ],
+      "default": "auto"
+    }
+  },
+  "output_types": {
+    "ocr_text": {"type": "string", "label": "Texte OCR"},
+    "images_analyzed": {"type": "integer", "label": "Nombre d'images analysées"}
+  }
+}

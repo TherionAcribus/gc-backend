@@ -1,0 +1,56 @@
+{
+  "name": "easyocr_ocr",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "OCR offline (EasyOCR) sur les images d'une géocache",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": ["easyocr", "Pillow", "numpy", "requests"],
+  "categories": ["Analysis", "Image"],
+  "kinds": ["image", "analyze"],
+  "brute_force": false,
+  "heavy_cpu": true,
+  "needs_network": true,
+  "needs_filesystem": false,
+  "input_types": {
+    "geocache_id": {
+      "type": "string",
+      "label": "ID de la géocache",
+      "required": true,
+      "default_value_source": "geocache_id"
+    },
+    "language": {
+      "type": "select",
+      "label": "Langue (indicative)",
+      "required": false,
+      "options": [
+        {"value": "auto", "label": "Auto"},
+        {"value": "fr", "label": "Français"},
+        {"value": "en", "label": "Anglais"},
+        {"value": "de", "label": "Allemand"},
+        {"value": "es", "label": "Espagnol"},
+        {"value": "it", "label": "Italien"},
+        {"value": "nl", "label": "Néerlandais"},
+        {"value": "pt", "label": "Portugais"}
+      ],
+      "default": "auto"
+    },
+    "preprocess": {
+      "type": "select",
+      "label": "Prétraitement",
+      "required": false,
+      "options": [
+        {"value": "auto", "label": "Auto"},
+        {"value": "none", "label": "Aucun"},
+        {"value": "threshold", "label": "Binarisation"}
+      ],
+      "default": "auto"
+    }
+  },
+  "output_types": {
+    "ocr_text": {"type": "string", "label": "Texte OCR"},
+    "confidence": {"type": "number", "label": "Confiance"},
+    "images_analyzed": {"type": "integer", "label": "Nombre d'images analysées"}
+  }
+}
