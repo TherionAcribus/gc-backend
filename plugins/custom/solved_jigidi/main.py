@@ -41,6 +41,17 @@ _PUBHTML_URL = f"https://docs.google.com/spreadsheets/d/e/{_SHEET_PUBLISHED_ID}/
 
 _CACHE_FORMAT_VERSION = 2
 
+_SITE_LOCK = threading.Lock()
+_SITE_LAST_REQUEST_AT = 0.0
+_SITE_COOLDOWN_UNTIL = 0.0
+_SITE_MIN_INTERVAL_SECONDS = 1.0
+_SITE_COOLDOWN_SECONDS_ON_429 = 120
+_SITE_RATE_LIMIT_CACHE_SECONDS = 300
+
+
+class _SolvedJigidiSiteRateLimited(Exception):
+    pass
+
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -133,7 +144,11 @@ class SolvedJigidiPlugin:
                 self._trigger_background_refresh_if_possible(backup_url)
 
             if site_fallback:
-                site_row = self._lookup_site_cached(gc_code, ttl_hours=site_cache_ttl_hours)
+                site_retry_after_seconds = self._get_site_retry_after_seconds(gc_code)
+                if site_retry_after_seconds <= 0:
+                    site_row = self._lookup_site_cached(gc_code, ttl_hours=site_cache_ttl_hours)
+                else:
+                    site_row = None
                 if site_row:
                     return self._build_result_from_row(
                         start_time=start_time,
@@ -142,6 +157,33 @@ class SolvedJigidiPlugin:
                         cache_status=f"{cache_status}+site",
                         backup_url=backup_url,
                     )
+
+                site_retry_after_seconds = self._get_site_retry_after_seconds(gc_code)
+            else:
+                site_retry_after_seconds = 0
+
+            if site_retry_after_seconds > 0:
+                summary = (
+                    "solvedjigidi.com semble saturé (HTTP 429 / limitation de débit). "
+                    f"Merci de réessayer plus tard (dans ~{site_retry_after_seconds}s). "
+                    f"Cache={cache_status}."
+                )
+                return {
+                    "status": "ok",
+                    "summary": summary,
+                    "results": [],
+                    "plugin_info": self._build_plugin_info(start_time, cache_status),
+                    "metadata": {
+                        "gc_code": gc_code,
+                        "cache_status": cache_status,
+                        "cache_refreshing": bool(_CACHE.refreshing),
+                        "backup_url": backup_url,
+                        "site_fallback": site_fallback,
+                        "site_cache_ttl_hours": site_cache_ttl_hours,
+                        "site_rate_limited": True,
+                        "site_retry_after_seconds": int(site_retry_after_seconds),
+                    },
+                }
 
             if cache_status == "loading":
                 summary = (
@@ -166,6 +208,8 @@ class SolvedJigidiPlugin:
                     "backup_url": backup_url,
                     "site_fallback": site_fallback,
                     "site_cache_ttl_hours": site_cache_ttl_hours,
+                    "site_rate_limited": False,
+                    "site_retry_after_seconds": 0,
                 },
             }
 
@@ -241,6 +285,16 @@ class SolvedJigidiPlugin:
         }
 
         if detection and isinstance(detection, dict) and detection.get("exist"):
+            formatted = detection.get("formatted")
+            if not formatted:
+                formatted = detection.get("ddm")
+            if not formatted:
+                ddm_lat = detection.get("ddm_lat")
+                ddm_lon = detection.get("ddm_lon")
+                if ddm_lat and ddm_lon:
+                    formatted = f"{ddm_lat} {ddm_lon}".strip()
+            if formatted:
+                detection["formatted"] = formatted
             result_item["coordinates"] = detection
             if detection.get("decimal_latitude") is not None:
                 result_item["decimal_latitude"] = detection.get("decimal_latitude")
@@ -257,6 +311,12 @@ class SolvedJigidiPlugin:
                 "longitude": float(result_item["decimal_longitude"]),
             }
 
+        primary_coordinates = None
+        if isinstance(top_level_coords, dict):
+            primary_coordinates = dict(top_level_coords)
+            if detection and isinstance(detection, dict) and detection.get("formatted"):
+                primary_coordinates["formatted"] = detection.get("formatted")
+
         summary = f"Entrée SolvedJigidi trouvée pour {gc_code}. Cache={cache_status}."
 
         return {
@@ -264,6 +324,7 @@ class SolvedJigidiPlugin:
             "summary": summary,
             "results": [result_item],
             "coordinates": top_level_coords,
+            "primary_coordinates": primary_coordinates,
             "plugin_info": self._build_plugin_info(start_time, cache_status),
             "metadata": {
                 "gc_code": gc_code,
@@ -315,6 +376,18 @@ class SolvedJigidiPlugin:
         if isinstance(entry, dict):
             fetched_at = entry.get("fetched_at")
             data = entry.get("data")
+            error = entry.get("error")
+            if isinstance(fetched_at, str) and isinstance(error, str) and error:
+                try:
+                    dt = datetime.fromisoformat(fetched_at)
+                    age = (_utc_now() - dt).total_seconds()
+                    if error == "not_found" and age <= ttl_hours * 3600:
+                        return None
+                    if error == "rate_limited" and age <= _SITE_RATE_LIMIT_CACHE_SECONDS:
+                        return None
+                except Exception:
+                    pass
+
             if isinstance(fetched_at, str) and isinstance(data, dict):
                 try:
                     dt = datetime.fromisoformat(fetched_at)
@@ -326,8 +399,19 @@ class SolvedJigidiPlugin:
                 except Exception:
                     pass
 
-        row = self._lookup_site(gc_code)
+        try:
+            row = self._lookup_site(gc_code)
+        except _SolvedJigidiSiteRateLimited:
+            cached[gc_code] = {"fetched_at": _utc_now().isoformat(), "error": "rate_limited"}
+            self._write_site_cache(cached)
+            return None
+        except Exception as exc:
+            logger.warning(f"Lookup solvedjigidi.com échoué pour {gc_code}: {exc}")
+            return None
+
         if row is None:
+            cached[gc_code] = {"fetched_at": _utc_now().isoformat(), "error": "not_found"}
+            self._write_site_cache(cached)
             return None
 
         cached[gc_code] = {"fetched_at": _utc_now().isoformat(), "data": row}
@@ -356,9 +440,36 @@ class SolvedJigidiPlugin:
 
     def _lookup_site(self, gc_code: str) -> Optional[Dict[str, Any]]:
         url = f"https://solvedjigidi.com/search.php?gc={gc_code}"
-        resp = self._session.get(url, timeout=20)
-        resp.raise_for_status()
+
+        with _SITE_LOCK:
+            now = time.time()
+            if now < _SITE_COOLDOWN_UNTIL:
+                raise _SolvedJigidiSiteRateLimited("Cooldown actif")
+
+            wait_for = (_SITE_LAST_REQUEST_AT + _SITE_MIN_INTERVAL_SECONDS) - now
+            if wait_for > 0:
+                time.sleep(wait_for)
+
+            # Réévaluer maintenant après le sleep
+            now = time.time()
+            if now < _SITE_COOLDOWN_UNTIL:
+                raise _SolvedJigidiSiteRateLimited("Cooldown actif")
+
+            resp = self._session.get(url, timeout=20)
+            globals()["_SITE_LAST_REQUEST_AT"] = time.time()
+
+            if getattr(resp, "status_code", None) == 429:
+                globals()["_SITE_COOLDOWN_UNTIL"] = time.time() + _SITE_COOLDOWN_SECONDS_ON_429
+                raise _SolvedJigidiSiteRateLimited("429 Too Many Requests")
+
+            resp.raise_for_status()
         html = resp.content.decode("utf-8", errors="replace")
+
+        # Certains rate-limits sont renvoyés en HTTP 200 avec une page HTML dédiée.
+        # Exemple: "Too many requests in a short time! ... Please try again later."
+        if re.search(r"too\s+many\s+requests\s+in\s+a\s+short\s+time", html, flags=re.IGNORECASE):
+            globals()["_SITE_COOLDOWN_UNTIL"] = time.time() + _SITE_COOLDOWN_SECONDS_ON_429
+            raise _SolvedJigidiSiteRateLimited("Rate limited HTML page")
 
         if "Found" not in html and "<h3>Found" not in html:
             return None
@@ -402,6 +513,37 @@ class SolvedJigidiPlugin:
             "Date Added": extract_field("Date added/updated"),
         }
         return data
+
+    def _get_site_retry_after_seconds(self, gc_code: Optional[str] = None) -> int:
+        now = time.time()
+        retry_seconds = 0
+
+        try:
+            cooldown_until = float(globals().get("_SITE_COOLDOWN_UNTIL", 0.0))
+        except Exception:
+            cooldown_until = 0.0
+
+        if now < cooldown_until:
+            retry_seconds = max(retry_seconds, int(cooldown_until - now))
+
+        if gc_code:
+            try:
+                cached = self._read_site_cache()
+                entry = cached.get(gc_code)
+                if isinstance(entry, dict) and entry.get("error") == "rate_limited":
+                    fetched_at = entry.get("fetched_at")
+                    if isinstance(fetched_at, str) and fetched_at:
+                        dt = datetime.fromisoformat(fetched_at)
+                        age = (_utc_now() - dt).total_seconds()
+                        if age <= _SITE_RATE_LIMIT_CACHE_SECONDS:
+                            retry_seconds = max(
+                                retry_seconds,
+                                int(_SITE_RATE_LIMIT_CACHE_SECONDS - age),
+                            )
+            except Exception:
+                pass
+
+        return retry_seconds
 
     def _normalize_backup_url(self, value: Any) -> Optional[str]:
         if value is None:
