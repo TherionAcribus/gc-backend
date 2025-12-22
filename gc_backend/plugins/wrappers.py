@@ -184,6 +184,7 @@ class PythonPluginWrapper(PluginInterface):
                 return False
             
             self._module = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = self._module
             
             # Ajouter le chemin du plugin au sys.path temporairement
             plugin_dir = str(Path(self.metadata.path))

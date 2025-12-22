@@ -1,0 +1,74 @@
+{
+  "name": "solved_jigidi",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Recherche des coordonnées résolues pour les puzzles Jigidi via le Google Sheet SolvedJigidi (cache + fallback).",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Meta", "Coordinates"],
+  "kinds": ["solver", "text"],
+  "brute_force": false,
+  "heavy_cpu": false,
+  "needs_network": true,
+  "needs_filesystem": true,
+  "timeout_seconds": 120,
+  "input_types": {
+    "geocache_id": {
+      "type": "string",
+      "label": "ID de la cache (optionnel)",
+      "required": false,
+      "hidden": true,
+      "default_value_source": "geocache_id"
+    },
+    "gc_code": {
+      "type": "string",
+      "label": "Code GC",
+      "required": false,
+      "placeholder": "GCXXXXXX"
+    },
+    "backup_url": {
+      "type": "string",
+      "label": "Backup URL (optionnel)",
+      "required": false,
+      "placeholder": "https://.../solvedjigidi.json (ou .csv)"
+    },
+    "site_fallback": {
+      "type": "checkbox",
+      "label": "Fallback vers solvedjigidi.com si code absent de la sheet",
+      "required": false,
+      "default": true
+    },
+    "site_cache_ttl_hours": {
+      "type": "number",
+      "label": "TTL cache fallback site (heures)",
+      "required": false,
+      "default": 168,
+      "min": 1,
+      "max": 720,
+      "step": 1
+    },
+    "max_age_hours": {
+      "type": "number",
+      "label": "Fraîcheur max du cache (heures)",
+      "required": false,
+      "default": 24,
+      "min": 1,
+      "max": 168,
+      "step": 1
+    },
+    "force_refresh": {
+      "type": "checkbox",
+      "label": "Forcer le refresh du cache (asynchrone)",
+      "required": false,
+      "default": false
+    }
+  },
+  "output_types": {
+    "results": {
+      "type": "array",
+      "label": "Résultats SolvedJigidi"
+    }
+  }
+}
