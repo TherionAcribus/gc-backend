@@ -1,0 +1,105 @@
+{
+  "name": "beaufort_cipher",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Plugin de chiffrement et déchiffrement utilisant le chiffre de Beaufort (symétrique).",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": [
+    "AlphabetsDecryption"
+  ],
+  "kinds": [
+    "code"
+  ],
+  "brute_force": false,
+  "enable_scoring": true,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": true,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": true,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Texte à traiter",
+      "placeholder": "Entrez le texte ici...",
+      "required": true
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": [
+        "decode",
+        "encode",
+        "detect"
+      ],
+      "default": "decode",
+      "required": true
+    },
+    "key": {
+      "type": "string",
+      "label": "Clé de chiffrement",
+      "placeholder": "Entrez la clé (lettres sans espaces)",
+      "default": "",
+      "required": true
+    },
+    "strict": {
+      "type": "select",
+      "label": "Mode strict",
+      "options": [
+        "strict",
+        "smooth"
+      ],
+      "default": "smooth"
+    },
+    "embedded": {
+      "type": "boolean",
+      "label": "Code Beaufort intégré dans un texte",
+      "default": false
+    },
+    "allowed_chars": {
+      "type": "string",
+      "label": "Caractères autorisés (optionnel)",
+      "placeholder": "Ex: .:;,_-°",
+      "default": " \t\r\n.:;,_-°"
+    },
+    "enable_scoring": {
+      "type": "boolean",
+      "label": "Scoring (legacy)",
+      "default": true,
+      "hidden": true
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Texte transformé"
+    }
+  },
+  "text_handling": {
+    "fields": [
+      "text"
+    ],
+    "allowed_ranges": [
+      "0041-005A"
+    ],
+    "allowed_characters": " \t\r\n.:;,_-°",
+    "unknown_char_policy": "warn_keep",
+    "normalize": {
+      "remove_diacritics": true,
+      "case": "upper",
+      "map_characters": {}
+    }
+  }
+}
