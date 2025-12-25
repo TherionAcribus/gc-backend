@@ -1,0 +1,91 @@
+{
+  "name": "consonants_vowels_rank",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Plugin de chiffrement et décodage via le chiffre par rang Consonnes/Voyelles (C1, V1, etc.)",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": [
+    "AlphabetsDecryption"
+  ],
+  "kinds": [
+    "code"
+  ],
+  "brute_force": true,
+  "enable_scoring": false,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": true,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": true,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Texte à traiter",
+      "placeholder": "Saisissez le texte à encoder ou décoder...",
+      "required": true
+    },
+    "variant": {
+      "type": "select",
+      "label": "Variante du chiffre",
+      "options": [
+        {
+          "value": "both",
+          "label": "Consonnes + Voyelles (C1, V1, ...)"
+        },
+        {
+          "value": "consonants",
+          "label": "Consonnes seulement"
+        },
+        {
+          "value": "vowels",
+          "label": "Voyelles seulement"
+        }
+      ],
+      "default": "both"
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": [
+        "encode",
+        "decode",
+        "bruteforce"
+      ],
+      "default": "decode",
+      "required": true
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Résultat"
+    }
+  },
+  "text_handling": {
+    "fields": [
+      "text"
+    ],
+    "allowed_ranges": [
+      "0041-005A"
+    ],
+    "allowed_characters": " \t\r\n.:;,_-'\"!?",
+    "unknown_char_policy": "warn_keep",
+    "normalize": {
+      "remove_diacritics": true,
+      "case": "upper",
+      "map_characters": {}
+    }
+  }
+}
