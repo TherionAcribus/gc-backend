@@ -1,0 +1,105 @@
+{
+  "name": "alpha_decoder",
+  "version": "1.4.0",
+  "plugin_api_version": "2.0",
+  "description": "Plugin de chiffrement/déchiffrement alphabétique (A=1, B=2, etc) avec gestion du décalage.",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": [
+    "NumbersDecryption"
+  ],
+  "kinds": [
+    "code"
+  ],
+  "brute_force": false,
+  "enable_scoring": false,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": true,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": true,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Texte à traiter",
+      "placeholder": "Entrez le texte ici...",
+      "required": true
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": [
+        "decode",
+        "encode"
+      ],
+      "default": "decode",
+      "required": true
+    },
+    "offset": {
+      "type": "select",
+      "label": "Décalage",
+      "options": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26
+      ],
+      "default": 0
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Texte transformé"
+    }
+  },
+  "text_handling": {
+    "fields": [
+      "text"
+    ],
+    "allowed_ranges": [
+      "0041-005A"
+    ],
+    "allowed_characters": " \t\r\n.:;,_-°",
+    "unknown_char_policy": "warn_keep",
+    "normalize": {
+      "remove_diacritics": true,
+      "case": "upper",
+      "map_characters": {}
+    }
+  }
+}
