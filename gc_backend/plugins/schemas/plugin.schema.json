@@ -173,6 +173,21 @@
               "type": "string",
               "description": "Libellé affiché dans l'interface"
             },
+            "required": {
+              "type": "boolean",
+              "default": false,
+              "description": "Indique si le champ est obligatoire côté interface"
+            },
+            "hidden": {
+              "type": "boolean",
+              "default": false,
+              "description": "Indique si le champ doit être masqué côté interface"
+            },
+            "default_value_source": {
+              "type": "string",
+              "pattern": "^[a-z_]+$",
+              "description": "Source de pré-remplissage automatique en contexte géocache (ex: geocache_id, geocache_description, geocache_coordinates)"
+            },
             "placeholder": {
               "type": "string",
               "description": "Texte d'aide dans le champ"
