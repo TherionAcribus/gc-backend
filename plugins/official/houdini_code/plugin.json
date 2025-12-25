@@ -1,0 +1,96 @@
+{
+  "name": "houdini_code",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Code Houdini : substitution chiffres/lettres (A-J) <-> mots (Pray, Answer, ...).",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": [
+    "WordsSubstitution"
+  ],
+  "kinds": [
+    "code"
+  ],
+  "brute_force": true,
+  "enable_scoring": false,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": true,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": true,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Texte à traiter",
+      "placeholder": "Entrez le texte ici...",
+      "required": true
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": [
+        "decode",
+        "encode"
+      ],
+      "default": "decode",
+      "required": true
+    },
+    "output_format": {
+      "type": "select",
+      "label": "Format de sortie (decode)",
+      "options": [
+        "numbers",
+        "letters"
+      ],
+      "default": "numbers"
+    },
+    "bruteforce": {
+      "type": "boolean",
+      "label": "Bruteforce (decode : chiffres + lettres)",
+      "default": false
+    },
+    "strict": {
+      "type": "select",
+      "label": "Mode strict",
+      "options": [
+        "strict",
+        "smooth"
+      ],
+      "default": "smooth"
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Résultat"
+    }
+  },
+  "text_handling": {
+    "fields": [
+      "text"
+    ],
+    "allowed_ranges": [
+      "0030-0039",
+      "0041-005A",
+      "0061-007A"
+    ],
+    "allowed_characters": " \t\r\n.:;,_-'\"!?",
+    "unknown_char_policy": "warn_keep",
+    "normalize": {
+      "remove_diacritics": true,
+      "case": "upper",
+      "map_characters": {}
+    }
+  }
+}
