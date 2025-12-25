@@ -1,0 +1,108 @@
+{
+  "name": "base_converter",
+  "version": "1.6.0",
+  "plugin_api_version": "2.0",
+  "description": "Plugin pour convertir des nombres entre différentes bases et ASCII.",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": [
+    "Conversion",
+    "Encoder",
+    "Decoder",
+    "Base",
+    "ASCII"
+  ],
+  "kinds": [
+    "code"
+  ],
+  "brute_force": true,
+  "enable_scoring": false,
+  "accept_accents": true,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": true,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": true,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Texte à convertir",
+      "placeholder": "Entrez un nombre ou du texte à convertir",
+      "required": true
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": [
+        "encode",
+        "decode",
+        "autodetect"
+      ],
+      "default": "decode",
+      "required": true
+    },
+    "source_base": {
+      "type": "select",
+      "label": "Base source",
+      "options": [
+        "2",
+        "8",
+        "10",
+        "16",
+        "36",
+        "64",
+        "ascii"
+      ],
+      "default": "16"
+    },
+    "target_base": {
+      "type": "select",
+      "label": "Base cible",
+      "options": [
+        "2",
+        "8",
+        "10",
+        "16",
+        "36",
+        "64",
+        "ascii"
+      ],
+      "default": "ascii"
+    },
+    "strict": {
+      "type": "select",
+      "label": "Mode strict",
+      "options": [
+        "strict",
+        "smooth"
+      ],
+      "default": "smooth"
+    },
+    "embedded": {
+      "type": "boolean",
+      "label": "Rechercher des fragments",
+      "default": false
+    },
+    "enable_gps_detection": {
+      "type": "boolean",
+      "label": "Activer la détection GPS",
+      "default": true
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Résultat de la conversion"
+    }
+  }
+}
