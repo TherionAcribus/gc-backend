@@ -89,7 +89,8 @@
   },
   "text_handling": {
     "fields": [
-      "text"
+      "text",
+      "key"
     ],
     "allowed_ranges": [
       "0041-005A"
