@@ -67,5 +67,22 @@
       "type": "string",
       "label": "Texte déchiffré"
     }
+  },
+  "text_handling": {
+    "fields": [
+      "text"
+    ],
+    "allowed_ranges": [
+      "0041-005A"
+    ],
+    "allowed_characters": " \t\r\n",
+    "unknown_char_policy": "warn_keep",
+    "normalize": {
+      "remove_diacritics": true,
+      "case": "upper",
+      "map_characters": {
+        "μ": "µ"
+      }
+    }
   }
 }

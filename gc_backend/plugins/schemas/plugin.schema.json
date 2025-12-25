@@ -260,6 +260,64 @@
           }
         }
       }
+    },
+    "text_handling": {
+      "type": "object",
+      "description": "Configuration optionnelle pour la normalisation des champs texte côté Plugin Executor (accents, casse, caractères supportés)",
+      "properties": {
+        "fields": {
+          "type": "array",
+          "description": "Liste des champs d'inputs à normaliser (par défaut: ['text'])",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z_]+$"
+          }
+        },
+        "allowed_ranges": {
+          "type": "array",
+          "description": "Liste de plages Unicode autorisées, au format HEX-HEX (ex: '0041-005A' pour A-Z)",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{4,6}-[0-9A-Fa-f]{4,6}$"
+          }
+        },
+        "allowed_characters": {
+          "type": "string",
+          "description": "Ensemble de caractères autorisés en plus des plages (ex: ' \t\r\n')"
+        },
+        "unknown_char_policy": {
+          "type": "string",
+          "enum": ["keep", "warn_keep", "strip", "error"],
+          "default": "warn_keep",
+          "description": "Comportement si un caractère n'est pas supporté après normalisation"
+        },
+        "normalize": {
+          "type": "object",
+          "description": "Règles de normalisation (accents, substitutions, casse)",
+          "properties": {
+            "remove_diacritics": {
+              "type": "boolean",
+              "default": false,
+              "description": "Si true, supprime les accents via décomposition Unicode (ex: é -> e)"
+            },
+            "case": {
+              "type": "string",
+              "enum": ["preserve", "upper", "lower"],
+              "default": "preserve",
+              "description": "Transformation de casse avant validation des caractères"
+            },
+            "map_characters": {
+              "type": "object",
+              "description": "Substitutions directes caractère -> caractère (ex: {'μ': 'µ'})",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false
