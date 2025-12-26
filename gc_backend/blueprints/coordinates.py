@@ -406,22 +406,6 @@ def _process_formula_part(formula_part, variables):
                             return f"({parts[2]})"
                     print(f"[DEBUG] Résultat final: {result}")
                     return result
-            
-            # Si l'expression contient encore des lettres majuscules, retourner l'expression partiellement résolue
-            if re.search(r'[A-Z]', expression):
-                print(f"[DEBUG] Expression partiellement résolue: '{expression}'")
-                return expression
-            
-            # Sinon, essayer d'évaluer comme une expression mathématique
-            result = _evaluate_math_expression(expression)
-            # Vérifier si le résultat contient un marqueur d'erreur
-            if isinstance(result, str) and result.startswith('ERR:'):
-                # Extraire et retourner l'expression originale avec parenthèses
-                parts = result.split(':')
-                if len(parts) >= 3:
-                    return f"({parts[2]})"
-            print(f"[DEBUG] Expression évaluée: '{expression}' = {result}")
-            return result
         
         # Sinon, retourner tel quel
         return formula_part
@@ -1347,12 +1331,10 @@ def _detect_dmm_dot_separator(text: str) -> Optional[Dict[str, Optional[str]]]:
 
     print("[DEBUG] _detect_dmm_dot_separator: Aucun match trouvé")
     return None
-
-# ------------------------------------------------------------------------------
 # Fonction principale de détection multi-format
 # ------------------------------------------------------------------------------
 
-def detect_gps_coordinates(text: str, include_numeric_only: bool = False, origin_coords: Optional[Dict[str, str]] = None) -> Dict[str, Optional[str]]:
+def detect_gps_coordinates(text: str, include_numeric_only: bool = False, origin_coords: Optional[Dict[str, str]] = None, include_written: bool = False) -> Dict[str, Optional[str]]:
     """
     Recherche des coordonnées GPS dans un texte en testant plusieurs formats.
     
@@ -1360,6 +1342,7 @@ def detect_gps_coordinates(text: str, include_numeric_only: bool = False, origin
         text (str): Le texte dans lequel rechercher des coordonnées
         include_numeric_only (bool): Si True, inclut la détection de coordonnées au format numérique pur (sans lettres cardinales ni symboles)
         origin_coords (Optional[Dict[str, str]]): Coordonnées d'origine au format DDM (optionnel)
+        include_written (bool): Si True, inclut la détection de coordonnées écrites en toutes lettres
     
     Le dictionnaire retourné contient :
       - 'exist': True si une coordonnée a été trouvée, sinon False.
@@ -1369,7 +1352,7 @@ def detect_gps_coordinates(text: str, include_numeric_only: bool = False, origin
     """
     print(f"[DEBUG] detect_gps_coordinates: Début de la détection sur texte de {len(text)} caractères")
     print(f"[DEBUG] detect_gps_coordinates: Extrait du texte: '{text[:100]}...' (tronqué)")
-    print(f"[DEBUG] detect_gps_coordinates: include_numeric_only={include_numeric_only}, origin_coords={origin_coords}")
+    print(f"[DEBUG] detect_gps_coordinates: include_numeric_only={include_numeric_only}, origin_coords={origin_coords}, include_written={include_written}")
     
     # ------------------------------------------------------------------
     # Carte <fonction de détection> -> score de confiance (0-1)
@@ -1378,7 +1361,6 @@ def detect_gps_coordinates(text: str, include_numeric_only: bool = False, origin
     # pondération sans toucher au reste du code.
     # ------------------------------------------------------------------
     confidence_map = {
-        _detect_word_coordinates:            1.00,
         _detect_geocaching_standard_format:  0.96,  # Nouvelle fonction avec haute priorité
         _detect_dmm_dot_separator:           0.95,
         _detect_compact_coordinates:         0.95,
@@ -1437,8 +1419,21 @@ def detect_gps_coordinates(text: str, include_numeric_only: bool = False, origin
             print(f"[DEBUG] detect_gps_coordinates: Coordonnées trouvées par {detect_func.__name__}: {result}")
             result["matched_text"] = text
             result["extract"] = {"plugin": detect_func.__name__, "version": "1.0"}
+
             return result
     
+    if include_written:
+        try:
+            written_result = _detect_word_coordinates(text)
+        except Exception:
+            written_result = None
+        if written_result and written_result.get("exist"):
+            written_result.setdefault("source", _detect_word_coordinates.__name__)
+            written_result.setdefault("confidence", 0.98)
+            written_result.setdefault("matched_text", text)
+            written_result.setdefault("extract", {"plugin": _detect_word_coordinates.__name__, "version": "1.0"})
+            return written_result
+
     print("[DEBUG] detect_gps_coordinates: Aucune coordonnée GPS détectée")
     return {
         "exist": False,
@@ -1451,59 +1446,6 @@ def detect_gps_coordinates(text: str, include_numeric_only: bool = False, origin
         "extract": None
     }
 
-# ------------------------------------------------------------------------------
-# Conversion DDM vers coordonnées décimales pour OpenLayers
-# ------------------------------------------------------------------------------
-
-def convert_ddm_to_decimal(ddm_lat: str, ddm_lon: str) -> Dict[str, float]:
-    """
-    Convertit des coordonnées au format DDM (N 48° 33.787' E 006° 38.803') 
-    en coordonnées décimales utilisables par OpenLayers.
-    
-    :param ddm_lat: Latitude au format DDM (ex: "N 48° 33.787'")
-    :param ddm_lon: Longitude au format DDM (ex: "E 006° 38.803'")
-    :return: Dictionnaire avec les clés 'latitude' et 'longitude' en décimal
-    """
-    print(f"[DEBUG] convert_ddm_to_decimal: Conversion de {ddm_lat}, {ddm_lon}")
-    
-    result = {'latitude': None, 'longitude': None}
-    
-    try:
-        # Extraction des composants de la latitude
-        lat_pattern = r'([NS])\s*(\d+)\s*[°º]\s*(\d+(?:\.\d+)?)'
-        lat_match = re.search(lat_pattern, ddm_lat)
-        if lat_match:
-            lat_dir, lat_deg, lat_min = lat_match.groups()
-            lat_decimal = float(lat_deg) + float(lat_min) / 60
-            if lat_dir == 'S':
-                lat_decimal = -lat_decimal
-            result['latitude'] = lat_decimal
-            print(f"[DEBUG] Latitude convertie: {lat_dir}{lat_deg}° {lat_min} -> {lat_decimal}")
-        else:
-            print(f"[ERROR] Format de latitude non reconnu: {ddm_lat}")
-            print(f"[DEBUG] Motif recherché: {lat_pattern}")
-        
-        # Extraction des composants de la longitude
-        lon_pattern = r'([EW])\s*(\d+)\s*[°º]\s*(\d+(?:\.\d+)?)'
-        lon_match = re.search(lon_pattern, ddm_lon)
-        if lon_match:
-            lon_dir, lon_deg, lon_min = lon_match.groups()
-            lon_decimal = float(lon_deg) + float(lon_min) / 60
-            if lon_dir == 'W':
-                lon_decimal = -lon_decimal
-            result['longitude'] = lon_decimal
-            print(f"[DEBUG] Longitude convertie: {lon_dir}{lon_deg}° {lon_min} -> {lon_decimal}")
-        else:
-            print(f"[ERROR] Format de longitude non reconnu: {ddm_lon}")
-            print(f"[DEBUG] Motif recherché: {lon_pattern}")
-            
-        print(f"[DEBUG] convert_ddm_to_decimal: Résultat de la conversion: {result}")
-    except Exception as e:
-        print(f"[ERROR] convert_ddm_to_decimal: Erreur lors de la conversion: {str(e)}")
-        traceback.print_exc()
-    
-    return result
-
 # Nouvelle route API pour détecter les coordonnées dans un texte
 @coordinates_bp.route('/api/detect_coordinates', methods=['POST'])
 def detect_coordinates_in_text():
@@ -1513,6 +1455,7 @@ def detect_coordinates_in_text():
     Attend un JSON avec:
     - 'text': Texte à analyser
     - 'include_numeric_only' (optionnel): Si True, active la détection de coordonnées au format numérique pur
+    - 'include_written' (optionnel): Si True, active la détection de coordonnées écrites en toutes lettres
     - 'origin_coords' (optionnel): Coordonnées d'origine au format DDM pour déterminer les directions cardinales
       Format attendu: {'ddm_lat': 'N 48° 40.123\'', 'ddm_lon': 'E 06° 10.456\''}
     
@@ -1532,77 +1475,122 @@ def detect_coordinates_in_text():
         text = data['text']
         # Récupérer le paramètre include_numeric_only (False par défaut)
         include_numeric_only = data.get('include_numeric_only', False)
+        # Récupérer le paramètre include_written (False par défaut)
+        include_written = data.get('include_written', False)
+        written_languages = data.get('written_languages', ['fr'])
+        written_max_candidates = data.get('written_max_candidates', 20)
+        written_include_deconcat = data.get('written_include_deconcat', True)
         # Récupérer les coordonnées d'origine (None par défaut)
         origin_coords = data.get('origin_coords')
         
         print(f"[DEBUG] Analyse du texte pour détecter des coordonnées: '{text[:50]}...' (tronqué)")
         print(f"[DEBUG] Détection de format numérique pur activée: {include_numeric_only}")
+        print(f"[DEBUG] Détection de coordonnées écrites activée: {include_written}")
         print(f"[DEBUG] Coordonnées d'origine fournies: {origin_coords}")
         
-        result = detect_gps_coordinates(text, include_numeric_only=include_numeric_only, origin_coords=origin_coords)
-        
-        return jsonify(result)
+        result = detect_gps_coordinates(
+            text,
+            include_numeric_only=include_numeric_only,
+            origin_coords=origin_coords,
+            include_written=False,
+        )
+
+        if not include_written:
+            return jsonify(result)
+
+        enriched = dict(result or {})
+        enriched['written'] = {
+            'enabled': True,
+            'attempted': False,
+            'languages': written_languages,
+            'max_candidates': written_max_candidates,
+            'include_deconcat': written_include_deconcat,
+            'candidates': [],
+            'combined_results': {},
+        }
+
+        if enriched.get('exist'):
+            return jsonify(enriched)
+
+        try:
+            from gc_backend.blueprints.plugins import get_plugin_manager
+            from gc_backend.services import WrittenCoordinatesService
+
+            plugin_manager = get_plugin_manager()
+            service = WrittenCoordinatesService(plugin_manager)
+
+            langs = written_languages
+            if isinstance(langs, str):
+                langs = [p.strip() for p in langs.split(',') if p.strip()]
+            if not isinstance(langs, list) or not langs:
+                langs = ['fr']
+
+            try:
+                max_cand = int(written_max_candidates)
+            except Exception:
+                max_cand = 20
+
+            wr = service.find(
+                text,
+                languages=[str(x).strip().lower() for x in langs if str(x).strip()],
+                max_candidates=max_cand,
+                include_deconcat=bool(written_include_deconcat),
+                origin_coords=origin_coords,
+            )
+
+            enriched['written']['attempted'] = True
+            enriched['written']['candidates'] = wr.candidates
+            enriched['written']['combined_results'] = wr.combined_results
+
+            if wr.exist and wr.primary_coordinates:
+                merged = dict(wr.primary_coordinates)
+                merged['written'] = enriched['written']
+                return jsonify(merged)
+
+            return jsonify(enriched)
+        except Exception as e:
+            enriched['written']['attempted'] = True
+            enriched['written']['error'] = str(e)
+            return jsonify(enriched)
         
     except Exception as e:
         print(f"[ERROR] Erreur lors de la détection des coordonnées: {str(e)}")
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# ------------------------------------------------------------------------------
-# Détection des coordonnées exprimées en toutes lettres (plugin word_coords_converter)
-# ------------------------------------------------------------------------------
-
-try:
-    from plugins.official.word_coords_converter.main import WordCoordsConverterPlugin  # type: ignore
-except Exception:
-    WordCoordsConverterPlugin = None  # Le plugin peut ne pas être disponible dans certains contextes
-
-
 def _detect_word_coordinates(text: str) -> Optional[Dict[str, Optional[str]]]:
     """Tente de détecter des coordonnées GPS exprimées en toutes lettres en utilisant
-    le plugin `word_coords_converter`. Retourne un dict au même format que les autres
+    le plugin `written_coords_converter`. Retourne un dict au même format que les autres
     fonctions de détection ou None si aucune coordonnée n'est trouvée."""
-    if WordCoordsConverterPlugin is None:
-        return None
-
     try:
-        plugin = WordCoordsConverterPlugin()
-        plugin_result = plugin.execute({
-            "text": text,
-            "language_override": "auto",
-            "enable_scoring": False
-        })
+        from gc_backend.blueprints.plugins import get_plugin_manager
 
-        if not plugin_result or not plugin_result.get("results"):
-            return None
+        plugin_manager = get_plugin_manager()
+        plugin_result = plugin_manager.execute_plugin(
+            "written_coords_converter",
+            {
+                "text": text,
+                "languages": ["fr"],
+                "max_candidates": 20,
+                "include_deconcat": True,
+            },
+        )
 
-        # Récupérer la sortie texte du plugin
-        output_text = plugin_result["results"][0].get("text_output", "").strip()
-        if not output_text:
-            return None
+        primary = (plugin_result or {}).get("primary_coordinates")
+        if isinstance(primary, dict) and primary.get("exist"):
+            return primary
 
-        # Extraire latitude et longitude à partir de l'expression DDM combinée
-        # Supposons que la latitude commence par N/S et la longitude par E/W
-        match = re.match(r"^([NS][^NSWE]+)[\s]+([EW].+)$", output_text, re.IGNORECASE)
-        if not match:
-            return None
+        for item in (plugin_result or {}).get("results", []) or []:
+            if not isinstance(item, dict):
+                continue
+            coords = item.get("coordinates")
+            if isinstance(coords, dict) and coords.get("exist"):
+                return coords
 
-        ddm_lat = match.group(1).strip()
-        ddm_lon = match.group(2).strip()
-
-        return {
-            "exist": True,
-            "ddm_lat": ddm_lat,
-            "ddm_lon": ddm_lon,
-            "ddm": f"{ddm_lat} {ddm_lon}"
-        }
+        return None
     except Exception:
         traceback.print_exc()
         return None
-
-# ------------------------------------------------------------------------------
-# Détection du format DMM sans symbole de degré (ex : "N 38 32.460 W 075 43.659")
-# ------------------------------------------------------------------------------
 
 def _detect_dmm_no_degree_symbol(text: str) -> Optional[Dict[str, Optional[str]]]:
     """

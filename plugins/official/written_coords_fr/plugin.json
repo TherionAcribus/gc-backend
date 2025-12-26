@@ -1,0 +1,41 @@
+{
+  "name": "written_coords_fr",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Reconnaissance de coordonnées GPS écrites en français (mots -> chiffres)",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Coordinates"],
+  "kinds": ["analyze"],
+  "brute_force": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "input_types": {
+    "text": {
+      "type": "textarea",
+      "label": "Texte à analyser",
+      "required": true
+    },
+    "max_candidates": {
+      "type": "number",
+      "label": "Max candidats",
+      "default": 20,
+      "min": 1,
+      "max": 200
+    },
+    "include_deconcat": {
+      "type": "checkbox",
+      "label": "Activer la détection concaténée",
+      "default": true
+    }
+  },
+  "output_types": {
+    "results": {
+      "type": "object",
+      "label": "Candidats coords"
+    }
+  }
+}
