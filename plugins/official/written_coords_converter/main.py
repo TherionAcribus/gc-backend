@@ -10,6 +10,25 @@ class WrittenCoordsConverterPlugin:
         self.description = "Reconnaissance de coordonnées GPS écrites en toutes lettres (orchestrateur)"
         self._plugin_manager = None
 
+        self._auto_fr_markers = {
+            "nord",
+            "sud",
+            "est",
+            "ouest",
+            "degre",
+            "degres",
+            "virgule",
+        }
+        self._auto_en_markers = {
+            "north",
+            "south",
+            "east",
+            "west",
+            "degree",
+            "degrees",
+            "comma",
+        }
+
     def set_plugin_manager(self, plugin_manager):
         self._plugin_manager = plugin_manager
 
@@ -34,11 +53,25 @@ class WrittenCoordsConverterPlugin:
         parts = [p for p in parts if p]
         return parts or ["fr"]
 
+    def _guess_languages(self, text: str) -> List[str]:
+        s = (text or "").lower()
+        hits_fr = any(m in s for m in self._auto_fr_markers)
+        hits_en = any(m in s for m in self._auto_en_markers)
+        if hits_fr and hits_en:
+            return ["fr", "en"]
+        if hits_en:
+            return ["en"]
+        if hits_fr:
+            return ["fr"]
+        return ["fr"]
+
     def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         start = time.time()
 
         text = inputs.get("text", "")
         languages = self._parse_languages(inputs.get("languages"))
+        if any(l in {"auto", "*"} for l in languages):
+            languages = self._guess_languages(text)
         max_candidates_raw = inputs.get("max_candidates", 20)
         include_deconcat = bool(inputs.get("include_deconcat", True))
         origin_coords = inputs.get("origin_coords")
@@ -120,12 +153,21 @@ class WrittenCoordsConverterPlugin:
                     except Exception:
                         validated = None
 
-                exist = bool(validated and validated.get("exist"))
+                exist = False
+                if isinstance(validated, dict):
+                    exist = bool(
+                        validated.get("exist")
+                        or (validated.get("ddm_lat") and validated.get("ddm_lon"))
+                        or validated.get("ddm")
+                    )
                 final_conf = float(child_conf or 0.0)
                 coords_obj = None
                 if exist:
                     coords_obj = validated
-                    final_conf = float(validated.get("confidence", 0.8))
+                    try:
+                        final_conf = float((validated or {}).get("confidence", 0.8))
+                    except Exception:
+                        final_conf = float(child_conf or 0.0)
 
                 all_candidates.append(
                     {
@@ -155,6 +197,28 @@ class WrittenCoordsConverterPlugin:
             if isinstance(coords, dict) and coords.get("exist"):
                 primary_coordinates = coords
                 break
+
+        if primary_coordinates is None and detect_gps_coordinates is not None:
+            for cand in all_candidates:
+                cand_text = (cand.get("text_output") or "").strip()
+                if not cand_text:
+                    continue
+                try:
+                    validated = detect_gps_coordinates(cand_text)
+                except Exception:
+                    validated = None
+
+                if isinstance(validated, dict) and validated.get("exist"):
+                    cand["coordinates"] = validated
+                    cand["metadata"]["validated"] = True
+                    cand["decimal_latitude"] = validated.get("decimal_latitude")
+                    cand["decimal_longitude"] = validated.get("decimal_longitude")
+                    try:
+                        cand["confidence"] = float(validated.get("confidence", cand.get("confidence") or 0.0))
+                    except Exception:
+                        pass
+                    primary_coordinates = validated
+                    break
 
         summary = f"{len(all_candidates)} candidats, {1 if primary_coordinates else 0} coordonnée validée"
 

@@ -20,9 +20,15 @@
       "required": true
     },
     "languages": {
-      "type": "string",
-      "label": "Langues (CSV)",
-      "default": "fr"
+      "type": "select",
+      "label": "Langue",
+      "options": [
+        "auto",
+        "fr",
+        "en",
+        "fr,en"
+      ],
+      "default": "auto"
     },
     "max_candidates": {
       "type": "number",

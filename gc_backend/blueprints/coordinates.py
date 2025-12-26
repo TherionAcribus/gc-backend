@@ -1411,7 +1411,12 @@ def detect_gps_coordinates(text: str, include_numeric_only: bool = False, origin
                         ddm_lon = ddm_lon or combined_match.group(2).strip()
 
                 if ddm_lat and ddm_lon:
-                    decimal_coords = convert_ddm_to_decimal(ddm_lat, ddm_lon)
+                    try:
+                        decimal_coords = convert_ddm_to_decimal(ddm_lat, ddm_lon)
+                    except Exception as e:
+                        print(f"[DEBUG] detect_gps_coordinates: Erreur conversion DDM->décimal: {e}")
+                        decimal_coords = {}
+
                     if decimal_coords.get('latitude') is not None and decimal_coords.get('longitude') is not None:
                         result.setdefault('decimal_latitude', decimal_coords['latitude'])
                         result.setdefault('decimal_longitude', decimal_coords['longitude'])
