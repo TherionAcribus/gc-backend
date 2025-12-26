@@ -1,0 +1,41 @@
+{
+  "name": "written_coords_en",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Recognize GPS coordinates written in English (words -> digits)",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Coordinates"],
+  "kinds": ["analyze"],
+  "brute_force": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "input_types": {
+    "text": {
+      "type": "textarea",
+      "label": "Text to analyze",
+      "required": true
+    },
+    "max_candidates": {
+      "type": "number",
+      "label": "Max candidates",
+      "default": 20,
+      "min": 1,
+      "max": 200
+    },
+    "include_deconcat": {
+      "type": "checkbox",
+      "label": "Enable concatenated-word detection",
+      "default": true
+    }
+  },
+  "output_types": {
+    "results": {
+      "type": "object",
+      "label": "Candidates"
+    }
+  }
+}
