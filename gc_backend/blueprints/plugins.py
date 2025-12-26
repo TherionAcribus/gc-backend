@@ -435,6 +435,62 @@ def get_plugin_manager() -> PluginManager:
     return _plugin_manager
 
 
+@bp.route('/score', methods=['POST'])
+def score_text_endpoint():
+    try:
+        try:
+            data = request.get_json(force=True)
+        except Exception as json_error:
+            return jsonify({
+                "error": "JSON invalide",
+                "message": f"Le body de la requête doit être un JSON valide: {str(json_error)}"
+            }), 400
+
+        if not data or not isinstance(data, dict):
+            return jsonify({
+                "error": "Requête invalide",
+                "message": "Le body doit être un objet JSON"
+            }), 400
+
+        context = data.get('context')
+        if context is not None and not isinstance(context, dict):
+            return jsonify({
+                "error": "Requête invalide",
+                "message": "Le champ 'context' doit être un objet"
+            }), 400
+
+        from gc_backend.plugins.scoring import score_text
+
+        if 'texts' in data:
+            texts = data.get('texts')
+            if not isinstance(texts, list) or not all(isinstance(t, str) for t in texts):
+                return jsonify({
+                    "error": "Requête invalide",
+                    "message": "Le champ 'texts' doit être une liste de strings"
+                }), 400
+
+            results: List[Dict[str, Any]] = []
+            for t in texts:
+                results.append(score_text(t, context=context or {}))
+            return jsonify({"results": results}), 200
+
+        text = data.get('text')
+        if not isinstance(text, str):
+            return jsonify({
+                "error": "Requête invalide",
+                "message": "Le champ 'text' (string) est requis"
+            }), 400
+
+        return jsonify(score_text(text, context=context or {})), 200
+
+    except Exception as e:
+        logger.error(f"Erreur scoring: {e}", exc_info=True)
+        return jsonify({
+            "error": "Erreur scoring",
+            "message": str(e)
+        }), 500
+
+
 # =============================================================================
 # Routes de listage et informations
 # =============================================================================
@@ -661,7 +717,51 @@ def execute_plugin(plugin_name: str):
             f"Plugin {plugin_name} exécuté avec succès "
             f"(status: {result.get('status')})"
         )
-        
+
+        try:
+            plugin_info = manager.get_plugin_info(plugin_name) or {}
+            metadata = plugin_info.get('metadata') if isinstance(plugin_info, dict) else {}
+            plugin_enable_scoring = False
+            if isinstance(metadata, dict) and 'enable_scoring' in metadata:
+                plugin_enable_scoring = bool(metadata.get('enable_scoring'))
+            enable_scoring = bool(inputs.get('enable_scoring', plugin_enable_scoring))
+
+            mode = inputs.get('mode')
+            mode_str = str(mode).lower() if isinstance(mode, str) else None
+
+            if enable_scoring and isinstance(result, dict) and isinstance(result.get('results'), list):
+                from gc_backend.plugins.scoring import score_text
+
+                for item in result.get('results') or []:
+                    if not isinstance(item, dict):
+                        continue
+
+                    item_metadata = item.get('metadata')
+                    if not isinstance(item_metadata, dict):
+                        item_metadata = {}
+                        item['metadata'] = item_metadata
+
+                    plugin_confidence = item.get('confidence')
+                    if plugin_confidence is not None and 'plugin_confidence' not in item_metadata:
+                        item_metadata['plugin_confidence'] = plugin_confidence
+
+                    if mode_str == 'detect':
+                        item['confidence'] = 0.0
+                        continue
+
+                    text_output = item.get('text_output')
+                    if not isinstance(text_output, str) or not text_output.strip():
+                        continue
+
+                    scored = score_text(text_output, context={})
+                    item['confidence'] = float(scored.get('score') or 0.0)
+
+                    scoring_meta = scored.get('metadata')
+                    if isinstance(scoring_meta, dict) and isinstance(scoring_meta.get('scoring'), dict):
+                        item_metadata['scoring'] = scoring_meta['scoring']
+        except Exception as e:
+            logger.warning(f"Scoring integration error for {plugin_name}: {e}")
+         
         return jsonify(result), 200
         
     except Exception as e:
