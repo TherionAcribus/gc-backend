@@ -153,6 +153,44 @@ class AnalysisWebPagePlugin:
                 logger.error(f"Erreur exécution sous-plugin {plugin_name}: {e}")
                 combined_results[plugin_name] = {"error": str(e)}
 
+        try:
+            stripped = re.sub(r"<[^>]+>", " ", page_content or "")
+            stripped = re.sub(r"\s+", " ", stripped).strip()
+        except Exception:
+            stripped = page_content
+
+        origin_coords_obj = None
+        if origin_coords:
+            try:
+                from gc_backend.blueprints.coordinates import detect_gps_coordinates
+
+                oc = detect_gps_coordinates(str(origin_coords))
+                if isinstance(oc, dict) and oc.get("exist") and oc.get("ddm_lat") and oc.get("ddm_lon"):
+                    origin_coords_obj = {"ddm_lat": oc.get("ddm_lat"), "ddm_lon": oc.get("ddm_lon")}
+            except Exception:
+                origin_coords_obj = None
+
+        try:
+            logger.info("Lancement sous-plugin: written_coords_converter")
+            written_inputs = {
+                "text": stripped,
+                "languages": "auto",
+                "max_candidates": 50,
+                "include_deconcat": True,
+            }
+            if origin_coords_obj is not None:
+                written_inputs["origin_coords"] = origin_coords_obj
+
+            written_result = plugin_manager.execute_plugin("written_coords_converter", written_inputs)
+            combined_results["written_coords_converter"] = written_result
+            if written_result and isinstance(written_result, dict) and "results" in written_result:
+                for item in written_result["results"]:
+                    item["source_plugin"] = "written_coords_converter"
+                    all_results_list.append(item)
+        except Exception as e:
+            logger.error(f"Erreur exécution sous-plugin written_coords_converter: {e}")
+            combined_results["written_coords_converter"] = {"error": str(e)}
+
         # Logique d'agrégation et déduplication des coordonnées
         primary_coordinates = self._aggregate_coordinates(combined_results, all_results_list)
         
@@ -177,6 +215,7 @@ class AnalysisWebPagePlugin:
             'coordinates_finder',
             'formula_parser',
             'coordinate_projection',
+            'written_coords_converter',
             'qr_code_detector',  # Coordonnées détectées via QR codes
             'image_alt_text_extractor',
             'color_text_detector',
@@ -190,7 +229,28 @@ class AnalysisWebPagePlugin:
                 if isinstance(res, dict):
                     # Cas 1 : Le plugin a déjà identifié des coordonnées principales (ex: formula_parser modifié ou coordinates_finder)
                     if 'primary_coordinates' in res and res['primary_coordinates']:
-                         return res['primary_coordinates']
+                        pc = res['primary_coordinates']
+                        if isinstance(pc, dict):
+                            if pc.get('latitude') is not None and pc.get('longitude') is not None:
+                                return pc
+                            if pc.get('decimal_latitude') is not None and pc.get('decimal_longitude') is not None:
+                                return {
+                                    'latitude': pc.get('decimal_latitude'),
+                                    'longitude': pc.get('decimal_longitude')
+                                }
+                            if pc.get('ddm_lat') and pc.get('ddm_lon'):
+                                try:
+                                    from gc_backend.blueprints.coordinates import convert_ddm_to_decimal
+
+                                    dec = convert_ddm_to_decimal(pc.get('ddm_lat'), pc.get('ddm_lon'))
+                                    if dec.get('latitude') is not None and dec.get('longitude') is not None:
+                                        return {
+                                            'latitude': dec.get('latitude'),
+                                            'longitude': dec.get('longitude')
+                                        }
+                                except Exception:
+                                    pass
+                        return pc
                     
                     # Cas 2 : On regarde dans la liste des résultats individuels de ce plugin
                     if 'results' in res and isinstance(res['results'], list):

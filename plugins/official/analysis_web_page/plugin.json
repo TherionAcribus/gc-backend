@@ -33,13 +33,13 @@
       "default_value_source": "geocache_description"
     },
     "waypoints": {
-      "type": "array",
+      "type": "textarea",
       "label": "Waypoints de la cache",
       "required": false,
       "hidden": true
     },
     "images": {
-      "type": "array",
+      "type": "textarea",
       "label": "Images de la cache",
       "required": false,
       "hidden": true
