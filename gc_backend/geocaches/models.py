@@ -37,6 +37,8 @@ class Geocache(db.Model):
     description_override_updated_at = db.Column(db.DateTime)
     hints = db.Column(db.Text)
     hints_decoded = db.Column(db.Text)
+    hints_decoded_override = db.Column(db.Text)
+    hints_decoded_override_updated_at = db.Column(db.DateTime)
     attributes = db.Column(db.JSON)
     favorites_count = db.Column(db.Integer)
     logs_count = db.Column(db.Integer)
@@ -105,6 +107,8 @@ class Geocache(db.Model):
             'description_override_updated_at': self.description_override_updated_at.isoformat() if self.description_override_updated_at else None,
             'hints': self.hints,
             'hints_decoded': decoded_hints,
+            'hints_decoded_override': self.hints_decoded_override,
+            'hints_decoded_override_updated_at': self.hints_decoded_override_updated_at.isoformat() if self.hints_decoded_override_updated_at else None,
             'attributes': self.attributes,
             'favorites_count': self.favorites_count,
             'logs_count': self.logs_count,
@@ -201,6 +205,8 @@ class GeocacheWaypoint(db.Model):
     longitude = db.Column(db.Float)
     gc_coords = db.Column(db.String(100))
     note = db.Column(db.Text)
+    note_override = db.Column(db.Text)
+    note_override_updated_at = db.Column(db.DateTime)
 
     geocache = db.relationship('Geocache', back_populates='waypoints')
 
@@ -215,6 +221,8 @@ class GeocacheWaypoint(db.Model):
             'longitude': self.longitude,
             'gc_coords': self.gc_coords,
             'note': self.note,
+            'note_override': self.note_override,
+            'note_override_updated_at': self.note_override_updated_at.isoformat() if self.note_override_updated_at else None,
         }
 
 

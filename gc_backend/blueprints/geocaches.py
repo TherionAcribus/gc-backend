@@ -1369,7 +1369,8 @@ def create_waypoint(geocache_id: int):
             latitude=latitude,  # ✅ Coordonnées parsées par le backend
             longitude=longitude,  # ✅ Coordonnées parsées par le backend
             gc_coords=gc_coords,
-            note=data.get('note')
+            note=data.get('note'),
+            note_override=(data.get('note_override') if data.get('note_override') is not None else data.get('note'))
         )
         
         # 🔍 LOG DÉTAILLÉ : Avant commit
@@ -1423,7 +1424,12 @@ def update_waypoint(geocache_id: int, waypoint_id: int):
         waypoint.lookup = data.get('lookup', waypoint.lookup)
         waypoint.name = data.get('name', waypoint.name)
         waypoint.type = data.get('type', waypoint.type)
-        waypoint.note = data.get('note', waypoint.note)
+        note_override = data.get('note_override')
+        if note_override is None and 'note' in data:
+            note_override = data.get('note')
+        if note_override is not None:
+            waypoint.note_override = str(note_override)
+            waypoint.note_override_updated_at = datetime.now(timezone.utc)
         
         # ✅ Si gc_coords a changé, recalculer lat/lon
         new_gc_coords = data.get('gc_coords')
@@ -1476,6 +1482,65 @@ def update_waypoint(geocache_id: int, waypoint_id: int):
     except Exception as e:
         db.session.rollback()
         logger.error(f"Erreur lors de la mise à jour du waypoint: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.put('/api/geocaches/<int:geocache_id>/translated-content')
+def update_translated_content(geocache_id: int):
+    try:
+        from ..geocaches.models import GeocacheWaypoint
+
+        data = request.get_json() or {}
+
+        geocache = Geocache.query.get(geocache_id)
+        if not geocache:
+            return jsonify({'error': 'Geocache not found'}), 404
+
+        any_update = False
+
+        override_raw = data.get('description_override_raw')
+        override_html = data.get('description_override_html')
+        if override_raw is not None or override_html is not None:
+            if override_raw is not None:
+                geocache.description_override_raw = str(override_raw)
+            if override_html is not None:
+                geocache.description_override_html = str(override_html)
+            geocache.description_override_updated_at = datetime.now(timezone.utc)
+            any_update = True
+
+        hints_decoded_override = data.get('hints_decoded_override')
+        if hints_decoded_override is not None:
+            geocache.hints_decoded_override = str(hints_decoded_override)
+            geocache.hints_decoded_override_updated_at = datetime.now(timezone.utc)
+            any_update = True
+
+        waypoints = data.get('waypoints')
+        if isinstance(waypoints, list):
+            for item in waypoints:
+                if not isinstance(item, dict):
+                    continue
+                waypoint_id = item.get('id')
+                note_override = item.get('note_override')
+                if waypoint_id is None or note_override is None:
+                    continue
+
+                waypoint = GeocacheWaypoint.query.filter_by(id=int(waypoint_id), geocache_id=geocache_id).first()
+                if not waypoint:
+                    continue
+
+                waypoint.note_override = str(note_override)
+                waypoint.note_override_updated_at = datetime.now(timezone.utc)
+                any_update = True
+
+        if not any_update:
+            return jsonify({'error': 'No updates provided'}), 400
+
+        db.session.commit()
+        return jsonify({'success': True, 'geocache': geocache.to_dict()})
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error updating translated content: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 

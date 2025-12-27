@@ -13,7 +13,7 @@ def init_db(app):
     with app.app_context():
         from .models import Zone  # noqa
         # Importer les modèles Geocache, GeocacheLog et Notes pour la création de table
-        from .geocaches.models import Geocache, GeocacheLog, Note, GeocacheNote, GeocacheImage  # noqa: F401
+        from .geocaches.models import Geocache, GeocacheLog, Note, GeocacheNote, GeocacheImage, GeocacheWaypoint  # noqa: F401
         # Importer le modèle Plugin pour la création de table
         from .plugins.models import Plugin  # noqa: F401
 
@@ -49,6 +49,8 @@ def init_db(app):
                 'description_override_updated_at': 'DATETIME',
                 'hints': 'TEXT',
                 'hints_decoded': 'TEXT',
+                'hints_decoded_override': 'TEXT',
+                'hints_decoded_override_updated_at': 'DATETIME',
                 'attributes': 'JSON',
                 'favorites_count': 'INTEGER',
                 'logs_count': 'INTEGER',
@@ -68,6 +70,27 @@ def init_db(app):
             db.session.commit()
         except Exception as e:
             logger.error(f"SQLite migration error: {e}")
+            db.session.rollback()
+
+        try:
+            logger.info("Running lightweight SQLite migrations for geocache_waypoint columns…")
+            existing_cols = set()
+            res = db.session.execute(text("PRAGMA table_info('geocache_waypoint')"))
+            for row in res:
+                existing_cols.add(row[1])
+
+            to_add: dict[str, str] = {
+                'note_override': 'TEXT',
+                'note_override_updated_at': 'DATETIME',
+            }
+
+            for col, col_type in to_add.items():
+                if col not in existing_cols:
+                    logger.info(f"Adding missing column geocache_waypoint.{col} ({col_type})")
+                    db.session.execute(text(f"ALTER TABLE geocache_waypoint ADD COLUMN {col} {col_type}"))
+            db.session.commit()
+        except Exception as e:
+            logger.error(f"SQLite migration error (geocache_waypoint): {e}")
             db.session.rollback()
 
         # Zone par défaut
