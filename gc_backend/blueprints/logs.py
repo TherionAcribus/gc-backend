@@ -1,17 +1,21 @@
-"""
-Blueprint pour la gestion des logs des géocaches.
+"""Blueprint pour la gestion des logs des géocaches.
 
 Ce module fournit les routes API pour :
 - Récupérer les logs stockés d'une géocache
 - Rafraîchir les logs depuis Geocaching.com
 - Filtrer les logs par type
 """
-from flask import Blueprint, jsonify, request
+
 import logging
+from datetime import date as date_type
+from datetime import datetime
+
+from flask import Blueprint, jsonify, request
 
 from ..database import db
 from ..geocaches.models import Geocache, GeocacheLog
 from ..services.geocaching_logs import GeocachingLogsClient
+from ..services.geocaching_submit_logs import GeocachingSubmitLogsClient
 
 bp = Blueprint('logs', __name__)
 logger = logging.getLogger(__name__)
@@ -69,6 +73,90 @@ def get_geocache_logs(geocache_id: int):
         
     except Exception as e:
         logger.error(f"Error fetching logs for geocache {geocache_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.post('/api/geocaches/<int:geocache_id>/logs/submit')
+def submit_geocache_log(geocache_id: int):
+    try:
+        geocache = Geocache.query.get(geocache_id)
+        if not geocache:
+            return jsonify({'error': 'Geocache not found'}), 404
+
+        gc_code = geocache.gc_code
+        if not gc_code:
+            return jsonify({'error': 'Geocache has no GC code'}), 400
+
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return jsonify({'error': 'Invalid JSON payload'}), 400
+
+        text = data.get('text')
+        if not isinstance(text, str) or not text.strip():
+            return jsonify({'error': 'Missing log text'}), 400
+
+        raw_date = data.get('date')
+        if not isinstance(raw_date, str) or not raw_date.strip():
+            return jsonify({'error': 'Missing log date'}), 400
+        try:
+            visited_date: date_type = datetime.strptime(raw_date.strip(), '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'error': 'Invalid date format (expected YYYY-MM-DD)'}), 400
+
+        log_type = data.get('logType')
+        log_type_id = data.get('logTypeId')
+
+        if isinstance(log_type_id, int):
+            resolved_log_type_id = log_type_id
+        elif isinstance(log_type, str):
+            key = log_type.strip().lower()
+            mapping = {
+                'found': 2,
+                'found_it': 2,
+                'found it': 2,
+                'dnf': 3,
+                "didn't find it": 3,
+                "didnt find it": 3,
+                'note': 4,
+                'write note': 4,
+            }
+            resolved_log_type_id = mapping.get(key)
+        else:
+            resolved_log_type_id = None
+
+        if not isinstance(resolved_log_type_id, int):
+            return jsonify({'error': 'Missing/invalid log type (use logType or logTypeId)'}), 400
+
+        favorite = data.get('favorite')
+        used_favorite_point = None
+        if isinstance(favorite, bool):
+            used_favorite_point = favorite
+
+        client = GeocachingSubmitLogsClient()
+        result = client.submit_geocache_log(
+            gc_code,
+            log_type_id=resolved_log_type_id,
+            log_text=text,
+            visited_date=visited_date,
+            used_favorite_point=used_favorite_point,
+        )
+        if not result:
+            return jsonify({'error': 'Failed to submit log to Geocaching.com'}), 502
+
+        if not isinstance(result, dict) or not result.get('logReferenceCode'):
+            return jsonify({'error': 'Geocaching.com did not return a logReferenceCode', 'gc_response': result}), 502
+
+        return jsonify({
+            'geocache_id': geocache_id,
+            'gc_code': gc_code,
+            'submitted': True,
+            'gc_response': result,
+            'log_reference_code': result.get('logReferenceCode') if isinstance(result, dict) else None,
+        })
+
+    except Exception as e:  # pragma: no cover
+        logger.error('Error submitting log for geocache %s: %s', geocache_id, e)
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 

@@ -1,0 +1,137 @@
+from __future__ import annotations
+
+import logging
+from datetime import date as date_type
+from datetime import datetime, time, timezone
+from typing import Any, Optional
+
+import browser_cookie3
+import requests
+
+logger = logging.getLogger(__name__)
+
+
+class GeocachingSubmitLogsClient:
+    def __init__(self, session: Optional[requests.Session] = None) -> None:
+        self.session = session or requests.Session()
+        self.session.headers.setdefault('User-Agent', 'GeoApp/1.0 (+https://example.local)')
+        self.session.headers.setdefault('Accept', 'application/json')
+        self._load_browser_cookies()
+
+    def _load_browser_cookies(self) -> None:
+        logger.info('Loading browser cookies for Geocaching.com log submit API...')
+
+        browsers = [
+            ('Firefox', browser_cookie3.firefox),
+            ('Chrome', browser_cookie3.chrome),
+            ('Edge', browser_cookie3.edge),
+        ]
+
+        for browser_name, browser_func in browsers:
+            try:
+                logger.debug('Trying to load cookies from %s...', browser_name)
+                cookies = browser_func(domain_name='geocaching.com')
+
+                cookie_count = 0
+                for cookie in cookies:
+                    self.session.cookies.set_cookie(cookie)
+                    cookie_count += 1
+
+                if cookie_count > 0:
+                    logger.info('Successfully loaded %s cookies from %s', cookie_count, browser_name)
+                    return
+            except Exception as e:  # pragma: no cover
+                logger.debug('Failed to load cookies from %s: %s', browser_name, e)
+                continue
+
+        logger.warning('No browser cookies loaded - log submit API may fail if authentication is required!')
+
+    def get_csrf_token(self) -> str | None:
+        url = 'https://www.geocaching.com/api/auth/csrf'
+        headers = {
+            'Accept': 'application/json',
+        }
+
+        try:
+            resp = self.session.get(url, headers=headers, timeout=30)
+            if resp.status_code != 200:
+                logger.error('CSRF token request failed: status=%s', resp.status_code)
+                return None
+            data = resp.json() if resp.content else None
+            token = data.get('csrfToken') if isinstance(data, dict) else None
+            return token if isinstance(token, str) and token.strip() else None
+        except requests.RequestException as e:  # pragma: no cover
+            logger.error('Failed to get CSRF token: %s', e)
+            return None
+
+    def submit_geocache_log(
+        self,
+        gc_code: str,
+        *,
+        log_type_id: int,
+        log_text: str,
+        visited_date: date_type,
+        used_favorite_point: bool | None = None,
+    ) -> dict[str, Any] | None:
+        gc_code = gc_code.strip().upper()
+        if not gc_code:
+            return None
+
+        csrf_token = self.get_csrf_token()
+        if not csrf_token:
+            logger.error('Could not get CSRF token')
+            return None
+
+        dt = datetime.combine(visited_date, time(12, 0, 0), tzinfo=timezone.utc)
+        log_date = dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+
+        payload: dict[str, Any] = {
+            'images': [],
+            'logDate': log_date,
+            'logText': log_text,
+            'logType': log_type_id,
+            'trackables': [],
+        }
+        if used_favorite_point is not None:
+            payload['usedFavoritePoint'] = bool(used_favorite_point)
+
+        url = f'https://www.geocaching.com/api/live/v1/logs/{gc_code}/geocacheLog'
+        headers = {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'CSRF-Token': csrf_token,
+        }
+
+        try:
+            resp = self.session.post(url, json=payload, headers=headers, timeout=60)
+            if resp.status_code != 200:
+                body_preview = (resp.text or '')[:2000]
+                logger.error('Log submit failed for %s: status=%s body=%r', gc_code, resp.status_code, body_preview)
+                return {
+                    'ok': False,
+                    'status': resp.status_code,
+                    'body': body_preview,
+                }
+
+            try:
+                data = resp.json() if resp.content else None
+            except Exception as e:  # pragma: no cover
+                logger.error('Log submit invalid JSON for %s: %s body=%r', gc_code, e, (resp.text or '')[:2000])
+                return {
+                    'ok': False,
+                    'status': resp.status_code,
+                    'body': (resp.text or '')[:2000],
+                }
+
+            if not isinstance(data, dict):
+                return {
+                    'ok': False,
+                    'status': resp.status_code,
+                    'body': (resp.text or '')[:2000],
+                }
+
+            data.setdefault('ok', True)
+            return data
+        except requests.RequestException as e:  # pragma: no cover
+            logger.error('Failed to submit log for %s: %s', gc_code, e)
+            return None
