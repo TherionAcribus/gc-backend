@@ -4,6 +4,7 @@ import io
 import time
 import zipfile
 import xml.etree.ElementTree as ET
+import xml.dom.minidom as minidom
 import json
 from datetime import datetime, timezone
 import re
@@ -78,6 +79,26 @@ def _groundspeak_cache_type(raw_type: str | None) -> str:
     return mapping.get(normalized, value)
 
 
+def _groundspeak_internal_cache_type(raw_type: str | None) -> str:
+    """Return value for <groundspeak:type>.
+
+    Groundspeak GPX uses 'Unknown Cache' for puzzles/mystery caches.
+    """
+    display = _groundspeak_cache_type(raw_type)
+    if display.lower() == 'unknown (mystery) cache':
+        return 'Unknown Cache'
+    return display
+
+
+def _to_pretty_xml_bytes(root: ET.Element) -> bytes:
+    if hasattr(ET, 'indent'):
+        ET.indent(root, space='  ', level=0)
+        return ET.tostring(root, encoding='utf-8', xml_declaration=True)
+
+    raw = ET.tostring(root, encoding='utf-8')
+    return minidom.parseString(raw).toprettyxml(indent='  ', encoding='utf-8')
+
+
 def _safe_groundspeaks_bool(value: bool) -> str:
     return 'True' if value else 'False'
 
@@ -131,6 +152,7 @@ def _build_groundspeak_gpx_bytes(geocaches: list[Geocache]) -> bytes:
 
         owner = (geocache.owner or '').strip() or 'Unknown'
         cache_type = _groundspeak_cache_type(geocache.type)
+        gs_cache_type = _groundspeak_internal_cache_type(geocache.type)
         difficulty = geocache.difficulty
         terrain = geocache.terrain
         dt = f"{difficulty:.1f}" if isinstance(difficulty, (int, float)) else '?'
@@ -167,7 +189,7 @@ def _build_groundspeak_gpx_bytes(geocaches: list[Geocache]) -> bytes:
         gs_owner.text = owner
 
         gs_type = ET.SubElement(gs_cache, 'groundspeak:type')
-        gs_type.text = cache_type
+        gs_type.text = gs_cache_type
 
         if geocache.size:
             gs_container = ET.SubElement(gs_cache, 'groundspeak:container')
@@ -233,7 +255,7 @@ def _build_groundspeak_gpx_bytes(geocaches: list[Geocache]) -> bytes:
         bounds.set('maxlat', str(max(lats)))
         bounds.set('maxlon', str(max(lons)))
 
-    return ET.tostring(gpx, encoding='utf-8', xml_declaration=True)
+    return _to_pretty_xml_bytes(gpx)
 
 
 def _build_waypoints_gpx_bytes(geocaches: list[Geocache]) -> bytes | None:
@@ -473,11 +495,13 @@ def export_gpx():
 
         zip_filename = f'{base_name}.zip'
         resp = Response(zip_buffer.getvalue(), mimetype='application/zip')
-        resp.headers['Content-Disposition'] = f'attachment; filename="{zip_filename}"'
+        resp.headers['Content-Disposition'] = f'attachment; filename="{zip_filename}"; filename*=UTF-8\'\'{zip_filename}'
+        resp.headers['X-Content-Type-Options'] = 'nosniff'
         return resp
 
-    resp = Response(main_payload, mimetype='application/gpx+xml')
-    resp.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    resp = Response(main_payload, mimetype='application/octet-stream')
+    resp.headers['Content-Disposition'] = f'attachment; filename="{filename}"; filename*=UTF-8\'\'{filename}'
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
     return resp
 
 

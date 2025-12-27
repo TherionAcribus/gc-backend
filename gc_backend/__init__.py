@@ -23,6 +23,7 @@ def create_app() -> Flask:
     CORS(
         app,
         supports_credentials=True,
+        expose_headers=['Content-Disposition'],
         resources={r"/*": {"origins": ["http://127.0.0.1:3000", "http://localhost:3000", "*"]}},
     )
 
