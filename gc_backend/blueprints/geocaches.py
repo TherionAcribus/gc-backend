@@ -91,6 +91,39 @@ def _groundspeak_internal_cache_type(raw_type: str | None) -> str:
     return display
 
 
+def _groundspeak_log_type(raw_type: str | None) -> str:
+    value = (raw_type or '').strip()
+    if not value:
+        return 'Write note'
+
+    normalized = value.lower().strip()
+    mapping = {
+        'found': 'Found it',
+        'found it': 'Found it',
+        'did not find': "Didn't find it",
+        "didn't find": "Didn't find it",
+        "didn't find it": "Didn't find it",
+        'note': 'Write note',
+        'write note': 'Write note',
+        'owner maintenance': 'Owner Maintenance',
+        'needs maintenance': 'Needs Maintenance',
+        'needs archived': 'Needs Archived',
+        'will attend': 'Will Attend',
+        'attended': 'Attended',
+        'enabled': 'Enabled',
+        'temporarily disabled': 'Temporarily Disable Listing',
+        'published': 'Publish Listing',
+        'retracted': 'Retract Listing',
+        'archived': 'Archive',
+        'unarchived': 'Unarchive',
+        'reviewer note': 'Reviewer Note',
+    }
+    if normalized in mapping:
+        return mapping[normalized]
+
+    return value
+
+
 def _to_pretty_xml_bytes(root: ET.Element) -> bytes:
     if hasattr(ET, 'indent'):
         ET.indent(root, space='  ', level=0)
@@ -133,6 +166,8 @@ def _build_groundspeak_gpx_bytes(geocaches: list[Geocache]) -> bytes:
     lons: list[float] = []
 
     notes_mode = str(get_value_or_default('geoApp.gpxExport.notesMode', 'logs') or 'logs').strip().lower()
+    include_gc_logs = bool(get_value_or_default('geoApp.gpxExport.includeGeocachingLogs', True))
+    max_gc_logs = int(get_value_or_default('geoApp.gpxExport.maxGeocachingLogs', 5) or 0)
 
     for geocache in geocaches:
         lat = geocache.latitude
@@ -246,9 +281,10 @@ def _build_groundspeak_gpx_bytes(geocaches: list[Geocache]) -> bytes:
 
         wants_note_logs = notes_mode == 'logs'
         has_notes = bool(geocache.notes)
-        has_logs = bool(geocache.logs)
+        wants_gc_logs = include_gc_logs and max_gc_logs > 0
+        has_logs = bool(geocache.logs) and wants_gc_logs
 
-        if wants_note_logs and has_notes or has_logs:
+        if (wants_note_logs and has_notes) or has_logs:
             gs_logs = ET.SubElement(gs_cache, 'groundspeak:logs')
 
             if wants_note_logs and has_notes:
@@ -277,15 +313,16 @@ def _build_groundspeak_gpx_bytes(geocaches: list[Geocache]) -> bytes:
                     gs_log_text.text = f"[{note_type}] {getattr(note, 'content', '')}"
 
             if has_logs:
-                for log in (geocache.logs or [])[:5]:
+                for log in (geocache.logs or [])[:max_gc_logs]:
                     gs_log = ET.SubElement(gs_logs, 'groundspeak:log')
-                    gs_log.set('id', str(getattr(log, 'id', 0)))
+                    external_id = getattr(log, 'external_id', None)
+                    gs_log.set('id', str(external_id or getattr(log, 'id', 0)))
 
                     gs_log_date = ET.SubElement(gs_log, 'groundspeak:date')
                     gs_log_date.text = _as_gpx_time(getattr(log, 'date', None))
 
                     gs_log_type = ET.SubElement(gs_log, 'groundspeak:type')
-                    gs_log_type.text = getattr(log, 'log_type', None) or 'Write note'
+                    gs_log_type.text = _groundspeak_log_type(getattr(log, 'log_type', None))
 
                     gs_log_finder = ET.SubElement(gs_log, 'groundspeak:finder')
                     gs_log_finder.set('id', '0')
