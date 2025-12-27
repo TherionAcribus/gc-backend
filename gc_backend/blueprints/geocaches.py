@@ -1621,6 +1621,41 @@ def update_coordinates(geocache_id: int):
         return jsonify({'error': str(e)}), 500
 
 
+@bp.put('/api/geocaches/<int:geocache_id>/description')
+def update_description(geocache_id: int):
+    try:
+        data = request.get_json() or {}
+        override_raw = data.get('description_override_raw')
+        override_html = data.get('description_override_html')
+
+        if override_raw is None and override_html is None:
+            return jsonify({'error': 'description_override_raw or description_override_html required'}), 400
+
+        geocache = Geocache.query.get(geocache_id)
+        if not geocache:
+            return jsonify({'error': 'Geocache not found'}), 404
+
+        # Store raw text as the primary edited variant.
+        if override_raw is not None:
+            geocache.description_override_raw = str(override_raw)
+
+        # HTML is optional (frontend can send it, or keep it unset).
+        if override_html is not None:
+            geocache.description_override_html = str(override_html)
+
+        geocache.description_override_updated_at = datetime.now(timezone.utc)
+
+        db.session.commit()
+
+        logger.info(f"Updated description override for geocache {geocache_id}")
+        return jsonify({'success': True, 'geocache': geocache.to_dict()})
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error updating description override: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
 @bp.post('/api/geocaches/<int:geocache_id>/reset-coordinates')
 def reset_coordinates(geocache_id: int):
     """
@@ -1648,6 +1683,28 @@ def reset_coordinates(geocache_id: int):
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error resetting coordinates: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.post('/api/geocaches/<int:geocache_id>/reset-description')
+def reset_description(geocache_id: int):
+    try:
+        geocache = Geocache.query.get(geocache_id)
+        if not geocache:
+            return jsonify({'error': 'Geocache not found'}), 404
+
+        geocache.description_override_raw = None
+        geocache.description_override_html = None
+        geocache.description_override_updated_at = None
+
+        db.session.commit()
+
+        logger.info(f"Reset description override for geocache {geocache_id}")
+        return jsonify({'success': True, 'geocache': geocache.to_dict()})
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error resetting description override: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 

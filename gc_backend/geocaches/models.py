@@ -32,6 +32,9 @@ class Geocache(db.Model):
     original_coordinates_raw = db.Column(db.String(100))  # Coordonnées originales au format Geocaching (format utilisé par les joueurs)
     description_html = db.Column(db.Text)
     description_raw = db.Column(db.Text)
+    description_override_html = db.Column(db.Text)
+    description_override_raw = db.Column(db.Text)
+    description_override_updated_at = db.Column(db.DateTime)
     hints = db.Column(db.Text)
     hints_decoded = db.Column(db.Text)
     attributes = db.Column(db.JSON)
@@ -97,6 +100,9 @@ class Geocache(db.Model):
             'original_coordinates_raw': self.original_coordinates_raw,
             'description_html': self.description_html,
             'description_raw': self.description_raw,
+            'description_override_html': self.description_override_html,
+            'description_override_raw': self.description_override_raw,
+            'description_override_updated_at': self.description_override_updated_at.isoformat() if self.description_override_updated_at else None,
             'hints': self.hints,
             'hints_decoded': decoded_hints,
             'attributes': self.attributes,
