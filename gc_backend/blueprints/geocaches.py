@@ -16,6 +16,7 @@ from ..geocaches.scraper import GeocachingScraper
 from ..geocaches.search_client import GeocachingSearchClient
 from ..geocaches.image_storage import remove_geocache_dir
 from ..geocaches.image_sync import ensure_images_v2_for_geocache
+from ..utils.preferences import get_value_or_default
 
 bp = Blueprint('geocaches', __name__)
 logger = logging.getLogger(__name__)
@@ -131,6 +132,8 @@ def _build_groundspeak_gpx_bytes(geocaches: list[Geocache]) -> bytes:
     lats: list[float] = []
     lons: list[float] = []
 
+    notes_mode = str(get_value_or_default('geoApp.gpxExport.notesMode', 'logs') or 'logs').strip().lower()
+
     for geocache in geocaches:
         lat = geocache.latitude
         lon = geocache.longitude
@@ -217,36 +220,80 @@ def _build_groundspeak_gpx_bytes(geocaches: list[Geocache]) -> bytes:
             gs_terrain = ET.SubElement(gs_cache, 'groundspeak:terrain')
             gs_terrain.text = f"{float(terrain):.1f}"
 
+        listing_html = geocache.description_html or geocache.description_raw or ''
+        if notes_mode == 'listing' and geocache.notes:
+            sorted_notes = sorted(
+                [n for n in (geocache.notes or []) if getattr(n, 'content', None)],
+                key=lambda n: getattr(n, 'updated_at', None) or getattr(n, 'created_at', None) or datetime.min.replace(tzinfo=timezone.utc),
+                reverse=True,
+            )
+            if sorted_notes:
+                notes_block = '\n'.join(
+                    f"<p><b>[GeoApp Note - {getattr(n, 'note_type', 'note')}]</b><br/>{getattr(n, 'content', '')}</p>" for n in sorted_notes
+                )
+                listing_html = f"{listing_html}\n<hr/>\n{notes_block}"
+
         gs_short_desc = ET.SubElement(gs_cache, 'groundspeak:short_description')
         gs_short_desc.set('html', 'True')
         gs_short_desc.text = ''
 
         gs_long_desc = ET.SubElement(gs_cache, 'groundspeak:long_description')
         gs_long_desc.set('html', 'True')
-        gs_long_desc.text = geocache.description_html or geocache.description_raw or ''
+        gs_long_desc.text = listing_html
 
         gs_hints = ET.SubElement(gs_cache, 'groundspeak:encoded_hints')
         gs_hints.text = geocache.hints or ''
 
-        if geocache.logs:
+        wants_note_logs = notes_mode == 'logs'
+        has_notes = bool(geocache.notes)
+        has_logs = bool(geocache.logs)
+
+        if wants_note_logs and has_notes or has_logs:
             gs_logs = ET.SubElement(gs_cache, 'groundspeak:logs')
-            for log in (geocache.logs or [])[:5]:
-                gs_log = ET.SubElement(gs_logs, 'groundspeak:log')
-                gs_log.set('id', str(getattr(log, 'id', 0)))
 
-                gs_log_date = ET.SubElement(gs_log, 'groundspeak:date')
-                gs_log_date.text = _as_gpx_time(getattr(log, 'date', None))
+            if wants_note_logs and has_notes:
+                sorted_notes = sorted(
+                    [n for n in (geocache.notes or []) if getattr(n, 'content', None)],
+                    key=lambda n: getattr(n, 'updated_at', None) or getattr(n, 'created_at', None) or datetime.min.replace(tzinfo=timezone.utc),
+                    reverse=True,
+                )
+                for note in sorted_notes:
+                    gs_log = ET.SubElement(gs_logs, 'groundspeak:log')
+                    gs_log.set('id', str(1000000000 + int(getattr(note, 'id', 0) or 0)))
 
-                gs_log_type = ET.SubElement(gs_log, 'groundspeak:type')
-                gs_log_type.text = getattr(log, 'log_type', None) or 'Write note'
+                    gs_log_date = ET.SubElement(gs_log, 'groundspeak:date')
+                    gs_log_date.text = _as_gpx_time(getattr(note, 'updated_at', None) or getattr(note, 'created_at', None))
 
-                gs_log_finder = ET.SubElement(gs_log, 'groundspeak:finder')
-                gs_log_finder.set('id', '0')
-                gs_log_finder.text = getattr(log, 'author', None) or 'Unknown'
+                    gs_log_type = ET.SubElement(gs_log, 'groundspeak:type')
+                    gs_log_type.text = 'Write note'
 
-                gs_log_text = ET.SubElement(gs_log, 'groundspeak:text')
-                gs_log_text.set('encoded', 'False')
-                gs_log_text.text = getattr(log, 'text', None) or ''
+                    gs_log_finder = ET.SubElement(gs_log, 'groundspeak:finder')
+                    gs_log_finder.set('id', '0')
+                    gs_log_finder.text = 'GeoApp'
+
+                    gs_log_text = ET.SubElement(gs_log, 'groundspeak:text')
+                    gs_log_text.set('encoded', 'False')
+                    note_type = getattr(note, 'note_type', None) or 'note'
+                    gs_log_text.text = f"[{note_type}] {getattr(note, 'content', '')}"
+
+            if has_logs:
+                for log in (geocache.logs or [])[:5]:
+                    gs_log = ET.SubElement(gs_logs, 'groundspeak:log')
+                    gs_log.set('id', str(getattr(log, 'id', 0)))
+
+                    gs_log_date = ET.SubElement(gs_log, 'groundspeak:date')
+                    gs_log_date.text = _as_gpx_time(getattr(log, 'date', None))
+
+                    gs_log_type = ET.SubElement(gs_log, 'groundspeak:type')
+                    gs_log_type.text = getattr(log, 'log_type', None) or 'Write note'
+
+                    gs_log_finder = ET.SubElement(gs_log, 'groundspeak:finder')
+                    gs_log_finder.set('id', '0')
+                    gs_log_finder.text = getattr(log, 'author', None) or 'Unknown'
+
+                    gs_log_text = ET.SubElement(gs_log, 'groundspeak:text')
+                    gs_log_text.set('encoded', 'False')
+                    gs_log_text.text = getattr(log, 'text', None) or ''
 
     if lats and lons:
         bounds = ET.SubElement(gpx, 'bounds')
