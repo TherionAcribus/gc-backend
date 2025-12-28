@@ -129,7 +129,7 @@ def submit_geocache_log(geocache_id: int):
 
         favorite = data.get('favorite')
         used_favorite_point = None
-        if isinstance(favorite, bool):
+        if isinstance(favorite, bool) and resolved_log_type_id == 2:
             used_favorite_point = favorite
 
         client = GeocachingSubmitLogsClient()
