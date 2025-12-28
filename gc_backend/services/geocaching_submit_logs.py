@@ -64,6 +64,82 @@ class GeocachingSubmitLogsClient:
             logger.error('Failed to get CSRF token: %s', e)
             return None
 
+    def upload_log_draft_image(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        content_type: str,
+    ) -> dict[str, Any] | None:
+        csrf_token = self.get_csrf_token()
+        if not csrf_token:
+            logger.error('Could not get CSRF token')
+            return None
+
+        url = 'https://www.geocaching.com/api/live/v1/logdrafts/images'
+        headers = {
+            'Accept': 'application/json',
+            'CSRF-Token': csrf_token,
+        }
+
+        files_variants = [
+            {'file': (filename, content, content_type)},
+            {'image': (filename, content, content_type)},
+            {'imageFile': (filename, content, content_type)},
+        ]
+
+        last_error: dict[str, Any] | None = None
+        for files in files_variants:
+            try:
+                resp = self.session.post(url, headers=headers, files=files, timeout=60)
+                if resp.status_code not in (200, 201):
+                    body_preview = (resp.text or '')[:2000]
+                    last_error = {
+                        'ok': False,
+                        'status': resp.status_code,
+                        'body': body_preview,
+                    }
+                    continue
+
+                try:
+                    data = resp.json() if resp.content else None
+                except Exception as e:  # pragma: no cover
+                    logger.error('Log image upload invalid JSON: %s body=%r', e, (resp.text or '')[:2000])
+                    last_error = {
+                        'ok': False,
+                        'status': resp.status_code,
+                        'body': (resp.text or '')[:2000],
+                    }
+                    continue
+
+                if isinstance(data, dict):
+                    data.setdefault('ok', True)
+                return data if isinstance(data, dict) else {'ok': True, 'data': data}
+            except requests.RequestException as e:  # pragma: no cover
+                logger.error('Failed to upload log image: %s', e)
+                last_error = {'ok': False, 'status': 0, 'error': str(e)}
+                continue
+
+        return last_error
+
+    @staticmethod
+    def extract_image_guid(payload: Any) -> str | None:
+        if isinstance(payload, dict):
+            for key in ('imageGuid', 'ImageGuid', 'guid', 'Guid', 'image_guid', 'imageGUID'):
+                value = payload.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            for value in payload.values():
+                guid = GeocachingSubmitLogsClient.extract_image_guid(value)
+                if guid:
+                    return guid
+        if isinstance(payload, list):
+            for value in payload:
+                guid = GeocachingSubmitLogsClient.extract_image_guid(value)
+                if guid:
+                    return guid
+        return None
+
     def submit_geocache_log(
         self,
         gc_code: str,
@@ -71,6 +147,7 @@ class GeocachingSubmitLogsClient:
         log_type_id: int,
         log_text: str,
         visited_date: date_type,
+        images: list[str] | None = None,
         used_favorite_point: bool | None = None,
     ) -> dict[str, Any] | None:
         gc_code = gc_code.strip().upper()
@@ -85,8 +162,14 @@ class GeocachingSubmitLogsClient:
         dt = datetime.combine(visited_date, time(12, 0, 0), tzinfo=timezone.utc)
         log_date = dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
+        safe_images: list[str] = []
+        if isinstance(images, list):
+            for value in images:
+                if isinstance(value, str) and value.strip():
+                    safe_images.append(value.strip())
+
         payload: dict[str, Any] = {
-            'images': [],
+            'images': safe_images,
             'logDate': log_date,
             'logText': log_text,
             'logType': log_type_id,

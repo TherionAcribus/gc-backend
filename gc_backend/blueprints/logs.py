@@ -20,6 +20,69 @@ from ..services.geocaching_submit_logs import GeocachingSubmitLogsClient
 bp = Blueprint('logs', __name__)
 logger = logging.getLogger(__name__)
 
+_MAX_LOG_IMAGE_BYTES = 10 * 1024 * 1024
+_ALLOWED_LOG_IMAGE_MIME_TYPES = {
+    'image/png',
+    'image/jpeg',
+    'image/jpg',
+    'image/webp',
+}
+
+
+def _get_uploaded_log_image_file():
+    uploaded = request.files.get('image_file')
+    if not uploaded:
+        uploaded = request.files.get('file')
+    if not uploaded:
+        return None, jsonify({'error': 'image_file is required'}), 400
+
+    content = uploaded.read(_MAX_LOG_IMAGE_BYTES + 1)
+    if not content:
+        return None, jsonify({'error': 'image_file is empty'}), 400
+    if len(content) > _MAX_LOG_IMAGE_BYTES:
+        return None, jsonify({'error': 'image_file is too large'}), 413
+
+    content_type = (uploaded.mimetype or request.form.get('mime_type') or '').split(';')[0].strip().lower()
+    if content_type not in _ALLOWED_LOG_IMAGE_MIME_TYPES:
+        return None, jsonify({'error': 'Unsupported mime type'}), 400
+
+    is_png = content.startswith(b'\x89PNG\r\n\x1a\n')
+    is_jpeg = content.startswith(b'\xff\xd8')
+    is_webp = content.startswith(b'RIFF') and len(content) > 12 and content[8:12] == b'WEBP'
+    if content_type == 'image/png' and not is_png:
+        return None, jsonify({'error': 'Invalid PNG file'}), 400
+    if content_type in {'image/jpeg', 'image/jpg'} and not is_jpeg:
+        return None, jsonify({'error': 'Invalid JPEG file'}), 400
+    if content_type == 'image/webp' and not is_webp:
+        return None, jsonify({'error': 'Invalid WEBP file'}), 400
+
+    filename = (uploaded.filename or '').strip() or 'upload.jpg'
+    return (content, content_type, filename), None, None
+
+
+@bp.post('/api/geocaches/<int:geocache_id>/logs/images/upload')
+def upload_geocache_log_image(geocache_id: int):
+    geocache = Geocache.query.get(geocache_id)
+    if not geocache:
+        return jsonify({'error': 'Geocache not found'}), 404
+
+    upload, error_response, status_code = _get_uploaded_log_image_file()
+    if error_response is not None:
+        return error_response, status_code
+
+    content, content_type, filename = upload
+
+    client = GeocachingSubmitLogsClient()
+    result = client.upload_log_draft_image(filename=filename, content=content, content_type=content_type)
+    if not result:
+        return jsonify({'error': 'Failed to upload image to Geocaching.com'}), 502
+
+    image_guid = GeocachingSubmitLogsClient.extract_image_guid(result)
+    if not image_guid:
+        return jsonify({'error': 'Geocaching.com did not return an image GUID', 'gc_response': result}), 502
+
+    return jsonify({'ok': True, 'image_guid': image_guid, 'gc_response': result})
+
 
 @bp.get('/api/geocaches/<int:geocache_id>/logs')
 def get_geocache_logs(geocache_id: int):
@@ -91,6 +154,16 @@ def submit_geocache_log(geocache_id: int):
         if not isinstance(data, dict):
             return jsonify({'error': 'Invalid JSON payload'}), 400
 
+        images = data.get('images')
+        safe_images = None
+        if images is not None:
+            if not isinstance(images, list):
+                return jsonify({'error': 'Invalid images (expected array of strings)'}), 400
+            safe_images = []
+            for value in images:
+                if isinstance(value, str) and value.strip():
+                    safe_images.append(value.strip())
+
         text = data.get('text')
         if not isinstance(text, str) or not text.strip():
             return jsonify({'error': 'Missing log text'}), 400
@@ -138,6 +211,7 @@ def submit_geocache_log(geocache_id: int):
             log_type_id=resolved_log_type_id,
             log_text=text,
             visited_date=visited_date,
+            images=safe_images,
             used_favorite_point=used_favorite_point,
         )
         if not result:
