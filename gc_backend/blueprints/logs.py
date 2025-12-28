@@ -8,7 +8,7 @@ Ce module fournit les routes API pour :
 
 import logging
 from datetime import date as date_type
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
@@ -146,12 +146,19 @@ def submit_geocache_log(geocache_id: int):
         if not isinstance(result, dict) or not result.get('logReferenceCode'):
             return jsonify({'error': 'Geocaching.com did not return a logReferenceCode', 'gc_response': result}), 502
 
+        if resolved_log_type_id == 2:
+            geocache.found = True
+            geocache.found_date = datetime.now(timezone.utc)
+            db.session.commit()
+
         return jsonify({
             'geocache_id': geocache_id,
             'gc_code': gc_code,
             'submitted': True,
             'gc_response': result,
             'log_reference_code': result.get('logReferenceCode') if isinstance(result, dict) else None,
+            'found': bool(geocache.found),
+            'found_date': geocache.found_date.isoformat() if geocache.found_date else None,
         })
 
     except Exception as e:  # pragma: no cover
