@@ -6,6 +6,7 @@ Ce module fournit les routes API pour :
 - Filtrer les logs par type
 """
 
+import json
 import logging
 from datetime import date as date_type
 from datetime import datetime, timezone
@@ -200,6 +201,16 @@ def submit_geocache_log(geocache_id: int):
         if not isinstance(resolved_log_type_id, int):
             return jsonify({'error': 'Missing/invalid log type (use logType or logTypeId)'}), 400
 
+        if resolved_log_type_id == 2 and bool(geocache.found):
+            return jsonify({
+                'error': 'Geocache already logged',
+                'error_code': 'ALREADY_LOGGED',
+                'geocache_id': geocache_id,
+                'gc_code': gc_code,
+                'found': bool(geocache.found),
+                'found_date': geocache.found_date.isoformat() if geocache.found_date else None,
+            }), 409
+
         favorite = data.get('favorite')
         used_favorite_point = None
         if isinstance(favorite, bool) and resolved_log_type_id == 2:
@@ -217,8 +228,35 @@ def submit_geocache_log(geocache_id: int):
         if not result:
             return jsonify({'error': 'Failed to submit log to Geocaching.com'}), 502
 
+        def _looks_like_already_logged(payload) -> bool:
+            try:
+                if isinstance(payload, (dict, list)):
+                    text_payload = json.dumps(payload, ensure_ascii=False)
+                else:
+                    text_payload = str(payload)
+                lowered = (text_payload or '').lower()
+                if 'already logged' in lowered:
+                    return True
+                if 'already' in lowered and 'log' in lowered and 'cache' in lowered:
+                    return True
+                if 'duplicate' in lowered and 'log' in lowered:
+                    return True
+                return False
+            except Exception:
+                return False
+
         if not isinstance(result, dict) or not result.get('logReferenceCode'):
-            return jsonify({'error': 'Geocaching.com did not return a logReferenceCode', 'gc_response': result}), 502
+            if _looks_like_already_logged(result):
+                return jsonify({
+                    'error': 'Geocache already logged',
+                    'error_code': 'ALREADY_LOGGED',
+                    'gc_response': result,
+                }), 409
+            return jsonify({
+                'error': 'Geocaching.com did not return a logReferenceCode',
+                'error_code': 'GC_MISSING_LOG_REFERENCE',
+                'gc_response': result,
+            }), 502
 
         if resolved_log_type_id == 2:
             geocache.found = True
