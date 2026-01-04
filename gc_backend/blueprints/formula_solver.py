@@ -763,6 +763,93 @@ def ai_search_answer():
         }), 500
 
 
+@formula_solver_bp.post('/ai/search-answers')
+def ai_search_answers():
+    """
+    Endpoint batch - Recherche web pour plusieurs questions.
+
+    Body JSON:
+        {
+            "questions": { "A": "Question...", "B": "Question..." }  // ou liste [{id,question}]
+            "context": "contexte optionnel",
+            "max_results": 5
+        }
+
+    Returns:
+        {
+            "status": "success",
+            "answers": {
+                "A": { "best_answer": "...", "results": [...] },
+                "B": { "best_answer": "...", "results": [...] }
+            }
+        }
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        questions = data.get('questions')
+        context = data.get('context')
+        max_results = data.get('max_results', 5)
+
+        if not questions:
+            return jsonify({
+                'status': 'error',
+                'error': 'Paramètre questions requis'
+            }), 400
+
+        items = []
+        if isinstance(questions, dict):
+            items = list(questions.items())
+        elif isinstance(questions, list):
+            for entry in questions:
+                if not isinstance(entry, dict):
+                    continue
+                key = entry.get('id') or entry.get('letter')
+                q = entry.get('question')
+                if key:
+                    items.append((key, q))
+        else:
+            return jsonify({
+                'status': 'error',
+                'error': 'Paramètre questions doit être un objet ou une liste'
+            }), 400
+
+        if not items:
+            return jsonify({
+                'status': 'error',
+                'error': 'Aucune question valide fournie'
+            }), 400
+
+        answers = {}
+        for key, question in items:
+            if not question:
+                answers[key] = {
+                    'best_answer': '',
+                    'results': []
+                }
+                continue
+
+            results = web_search_service.search(question, context, max_results)
+            best_answer = web_search_service.extract_answer(results)
+            answers[key] = {
+                'best_answer': best_answer,
+                'results': results
+            }
+
+        logger.info(f"[AI] Recherche web batch: {len(items)} question(s)")
+
+        return jsonify({
+            'status': 'success',
+            'answers': answers
+        })
+
+    except Exception as e:
+        logger.error(f"[AI] Erreur recherche web batch: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 @formula_solver_bp.post('/ai/suggest-calculation-type')
 def ai_suggest_calculation_type():
     """
@@ -859,7 +946,9 @@ def ai_suggest_calculation_type():
         # Recommander le type avec la plus haute confiance
         recommended = suggestions[0]['type'] if suggestions else 'length'
         
-        logger.info(f"[AI] Suggestion calcul pour '{answer[:30]}...': {recommended}")
+        question_hint = (question or '').strip()
+        question_hint = (question_hint[:40] + '...') if len(question_hint) > 40 else question_hint
+        logger.info(f"[AI] Suggestion calcul pour '{answer[:30]}...' (question='{question_hint}'): {recommended}")
         
         return jsonify({
             'status': 'success',

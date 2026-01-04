@@ -10,7 +10,7 @@ Supporte deux méthodes :
 """
 
 import re
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Union
 from loguru import logger
 
 
@@ -70,10 +70,14 @@ class FormulaQuestionsService:
         
         # Définir les séparateurs possibles
         # Point, double-points, parenthèse fermante, tiret, tiret long, tiret cadratin, slash
-        separators_class = r'[.:\)\-–—/]'
+        separators_class = r'[.:\)\-–—/]'  # NB: '=' est traité par un pattern dédié ci-dessous
         
         # Patterns regex pour différents formats de questions
         patterns = [
+            # Format très courant: "A = instruction..." (ou "A=...")
+            # Exemple: "A = valeur du nom complet (en 4 mots) (A=1…Z=26)"
+            rf'(?:^|\n)\s*({letters_pattern})\s*=\s*([^\n]+)',
+
             # Format: A. / A: / A) / A- suivi du texte jusqu'au prochain en-tête ou fin
             # Exemple: "A. Combien de fenêtres?"
             rf'(?:^|\n)\s*({letters_pattern})\s*{separators_class}\s*(.*?)(?=\n\s*[A-Z]\s*{separators_class}|\n\s*\d+\s*{separators_class}|$)',
@@ -103,20 +107,22 @@ class FormulaQuestionsService:
             for match in matches_list:
                 logger.debug(f"Match trouvé: groupes={match.groups()}, span={match.span()}")
                 if len(match.groups()) >= 2:
-                    # Déterminer quelle groupe contient la lettre et lequel contient la question
-                    if pattern_idx in (2, 3):
-                        # Pour les formats où la lettre est après le texte (fin de ligne),
-                        # la question est le premier groupe.
-                        question = match.group(1).strip()
-                        letter = match.group(2).upper()
-                        
-                        # Ne pas remplacer une question déjà trouvée par un pattern précédent
-                        if result[letter]:
-                            continue
+                    # Déterminer quel groupe contient la lettre, de manière robuste
+                    # (évite de dépendre de l'ordre des patterns).
+                    group1 = (match.group(1) or '').strip()
+                    group2 = (match.group(2) or '').strip()
+
+                    letter = ''
+                    question = ''
+
+                    if group1.upper() in letters:
+                        letter = group1.upper()
+                        question = group2
+                    elif group2.upper() in letters:
+                        letter = group2.upper()
+                        question = group1
                     else:
-                        # Pour les autres formats, la lettre est le premier groupe
-                        letter = match.group(1).upper()
-                        question = match.group(2).strip()
+                        continue
                     
                     # Vérifier que la lettre est bien dans notre liste
                     if letter in letters:
