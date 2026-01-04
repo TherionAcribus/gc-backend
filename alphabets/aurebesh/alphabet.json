@@ -14,7 +14,7 @@
       "letters": "all",
       "numbers": "",
       "special": {
-        "$": "$",
+        "$": "$"
       }
     }
   }
