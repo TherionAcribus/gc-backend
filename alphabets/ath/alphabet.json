@@ -1,0 +1,24 @@
+{
+  "name": "Baronh",
+  "description": "La langue Baronh et son alphabet Ath sont utilisés dans les mangas Crest of the Stars et Banner of the Stars.",
+  "type": "alphabet",
+  "category": "alphabets",
+  "version": "1.0.0",
+  "tags": ["manga", "Crest of the Stars","Banner of the Stars"],
+  "alphabetConfig": {
+    "type": "font",
+    "fontFile": "fonts/Baronh.ttf",
+    "hasUpperCase": true,
+    "upperCaseOnly": true,
+    "characters": {
+      "letters": "all",
+      "numbers": "",
+      "special": {
+        ".": "point",
+        ",": "virgule",
+        "!": "exclamation",
+        "?": "question"
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "Betamaze",
+  "description": "Betamaze est une invention d'un étudiant en art, Terrana Cliff. Ce code permet de dessiner des labyrinthes.",
+  "type": "alphabet",
+  "category": "alphabets",
+  "version": "1.1.1",
+  "tags": ["labyrinthe"],
+  "alphabetConfig": {
+    "type": "font",
+    "fontFile": "fonts/betamaze.ttf",
+    "hasUpperCase": true,
+    "upperCaseOnly": false,
+    "characters": {
+      "letters": "all",
+      "numbers": "all",
+      "special": {
+        "'": "'",
+        "(": "(",
+        ")": ")",
+        ",": ",",
+        ".": ".",
+        ";": ";",
+        "_": "_"
+      }
+    }
+  }
+}

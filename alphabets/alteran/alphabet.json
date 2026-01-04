@@ -1,9 +1,10 @@
 {
   "name": "Alteran",
-  "description": "Alteran",
+  "description": "Aussi connu sous le nom 'language des anciens', l'Alteran est un language de la série télévisée Stargate",
   "type": "alphabet",
   "category": "alphabets",
   "version": "1.0.0",
+  "tags": ["série télé", "Stargate"],
   "alphabetConfig": {
     "type": "font",
     "fontFile": "fonts/alteran.ttf",
@@ -13,10 +14,6 @@
       "letters": "all",
       "numbers": "all",
       "special": {
-        ".": "point",
-        ",": "virgule",
-        "!": "exclamation",
-        "?": "question"
       }
     }
   }

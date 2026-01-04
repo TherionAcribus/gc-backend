@@ -1,19 +1,20 @@
 {
-  "name": "Al Bhed",
-  "description": "Langue du peuple Al Bhed dans le jeu vidéo Final Fantasy",
+  "name": "Aurebesh",
+  "description": "L'Aurebesh est un alphabet de l'univers de Star Wars.",
   "type": "alphabet",
   "category": "alphabets",
   "version": "1.0.0",
-  "tags": ["jeu video", "Final Fantasy"],
+  "tags": ["film", "Star Wars"],
   "alphabetConfig": {
     "type": "font",
-    "fontFile": "fonts/albhed.ttf",
-    "hasUpperCase": true,
+    "fontFile": "fonts/aurebesh.ttf",
+    "hasUpperCase": false,
     "upperCaseOnly": false,
     "characters": {
       "letters": "all",
       "numbers": "",
       "special": {
+        "$": "$",
       }
     }
   }

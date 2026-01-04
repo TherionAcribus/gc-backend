@@ -1,22 +1,19 @@
 {
   "name": "Arcadia",
-  "description": "Arcadia",
+  "description": "L'Arcadia est une langue utilisé dans le jeu vidéo 'Skies of Arcadia'",
   "type": "alphabet",
   "category": "alphabets",
   "version": "1.0.0",
+  "tags": ["jeu video", "Skies of Arcadia"],
   "alphabetConfig": {
     "type": "font",
     "fontFile": "fonts/arcadia.ttf",
     "hasUpperCase": false,
     "upperCaseOnly": false,
     "characters": {
-      "letters": "all",
-      "numbers": "all",
+      "letters": "false",
+      "numbers": "",
       "special": {
-        ".": "point",
-        ",": "virgule",
-        "!": "exclamation",
-        "?": "question"
       }
     }
   }

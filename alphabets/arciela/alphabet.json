@@ -1,9 +1,10 @@
 {
-  "name": "Arciela",
-  "description": "Arciela",
+  "name": "Ar Ciela",
+  "description": "Ar Ciela est une langue utilisée dans les jeux de l'univers Exa Pico",
   "type": "alphabet",
   "category": "alphabets",
   "version": "1.0.0",
+  "tags": ["jeu video", "Exa Pico"],
   "alphabetConfig": {
     "type": "font",
     "fontFile": "fonts/arciela.ttf",
@@ -13,10 +14,6 @@
       "letters": "all",
       "numbers": "",
       "special": {
-        ".": "point",
-        ",": "virgule",
-        "!": "exclamation",
-        "?": "question"
       }
     }
   }
