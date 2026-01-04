@@ -94,6 +94,9 @@ class CoordinateCalculator:
         """
         result = formula
 
+        # Normaliser les espaces (y compris NBSP, etc.)
+        result = re.sub(r'\s+', ' ', result).strip().replace('\u00C2', '')
+
         # Nettoyer les formules qui commencent par "X=" où X est une direction cardinale
         # (Cas d'erreur de génération AI)
         for cardinal in ['N', 'S', 'E', 'W']:
@@ -101,30 +104,17 @@ class CoordinateCalculator:
                 result = result[2:]  # Supprimer "N=" etc.
                 break
 
-        # Trouver toutes les lettres (variables) dans la formule
-        # Pattern pour détecter : lettre isolée OU lettre après chiffre OU lettre après point
-        # Ex: "5E", ".FTN", "A+B", etc.
-        # Mais exclure N/S/E/W au début suivi de ° ou espace+chiffre (directions cardinales)
+        # IMPORTANT: ne jamais remplacer le cardinal (N/E/S/W) de tête, même si la lettre est une variable
+        # (ex: "E 002° 51. DEF" avec E=3 doit devenir "E 002° 51. 333", pas "3 002° ...").
+        prefix = ''
+        body = result
+        m = re.match(r'^([NSEWO])(\s*)', result, flags=re.IGNORECASE)
+        if m:
+            prefix = m.group(1).upper() + (m.group(2) or '')
+            body = result[m.end():]
 
-        # D'abord, détecter toutes les lettres A-Z dans la formule
-        all_letters = set(re.findall(r'([A-Z])', result))
-
-        # Exclure les directions cardinales N, S, E, W si elles sont suivies de °, espace, ou chiffre (degrés)
-        variables = set()
-        for match in re.finditer(r'([A-Z])', result):
-            letter = match.group(1)
-            pos = match.start()
-
-            # Vérifier si c'est une direction cardinale
-            if letter in ['N', 'S', 'E', 'W']:
-                # Regarder ce qui suit immédiatement
-                if pos + 1 < len(result):
-                    next_char = result[pos + 1]
-                    # Si suivi de °, espace, ou chiffre (début des degrés), c'est une direction cardinale
-                    if next_char in ['°', ' '] or next_char.isdigit():
-                        continue
-
-            variables.add(letter)
+        # Détecter les variables uniquement dans le corps (sans le cardinal de tête)
+        variables = set(re.findall(r'([A-Z])', body))
         
         # Vérifier que toutes les variables ont une valeur
         missing = []
@@ -139,13 +129,16 @@ class CoordinateCalculator:
         # Ex: substituer Z avant Y pour éviter que "Y" ne devienne "5Z" si Y=5
         for var in sorted(variables, reverse=True):
             value = values[var]
-            # Remplacer toutes les occurrences de la lettre
-            result = result.replace(var, str(value))
+            # Remplacer toutes les occurrences de la lettre dans le corps uniquement
+            body = body.replace(var, str(value))
         
         # Évaluer les expressions entre parenthèses ou après le point
-        result = self._evaluate_expressions(result)
+        body = self._evaluate_expressions(body)
+
+        # Normaliser les séparateurs DDM (évite "49. 333" qui serait parsé comme "49.000")
+        body = re.sub(r'\s*\.\s*', '.', body)
         
-        return result
+        return f"{prefix}{body}"
     
     def _evaluate_expressions(self, formula: str) -> str:
         """
