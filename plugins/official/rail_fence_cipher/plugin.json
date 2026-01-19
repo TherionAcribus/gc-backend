@@ -1,0 +1,76 @@
+{
+  "name": "rail_fence_cipher",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Plugin de chiffrement/déchiffrement utilisant le chiffre Rail Fence (zigzag).",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Transposition"],
+  "kinds": ["code"],
+  "brute_force": true,
+  "enable_scoring": true,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": true,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": true,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Texte à traiter",
+      "placeholder": "Entrez le texte à chiffrer ou déchiffrer...",
+      "required": true
+    },
+    "key": {
+      "type": "number",
+      "label": "Clé (nombre de rails)",
+      "min": 2,
+      "max": 20,
+      "step": 1,
+      "default": 3
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["encode", "decode", "bruteforce"],
+      "default": "decode",
+      "required": true
+    },
+    "start_direction": {
+      "type": "select",
+      "label": "Sens de départ",
+      "options": ["top", "bottom"],
+      "default": "top"
+    },
+    "max_key": {
+      "type": "number",
+      "label": "Clé max (bruteforce)",
+      "min": 2,
+      "max": 30,
+      "step": 1,
+      "default": 10
+    },
+    "bruteforce": {
+      "type": "boolean",
+      "label": "Bruteforce",
+      "default": false
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Texte transformé"
+    }
+  }
+}
