@@ -1,0 +1,91 @@
+{
+  "name": "nihilist_cipher",
+  "version": "1.2.1",
+  "plugin_api_version": "2.0",
+  "description": "Chiffre des Nihilistes : surchiffrement du carré de Polybe avec clé additionnelle.",
+  "author": "MysterAI Team",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": ["polybius_square"],
+  "categories": ["AlphabetsDecryption"],
+  "kinds": ["code"],
+  "brute_force": false,
+  "enable_scoring": true,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": true,
+    "decode": true,
+    "encode": true,
+    "detect": true
+  },
+  "defaults": {
+    "include_in_analysis": true,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Texte à traiter",
+      "placeholder": "Entrez le texte ici...",
+      "required": true
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["decode", "encode", "detect"],
+      "default": "decode",
+      "required": true
+    },
+    "key": {
+      "type": "string",
+      "label": "Clé de surchiffrement",
+      "placeholder": "Entrez la clé ici...",
+      "required": false
+    },
+    "grid_key": {
+      "type": "string",
+      "label": "Mot-clé pour la grille",
+      "placeholder": "Mot-clé pour mélanger l'alphabet (optionnel)",
+      "required": false
+    },
+    "alphabet_mode": {
+      "type": "select",
+      "label": "Mode alphabet",
+      "options": ["I=J", "C=K", "W=VV"],
+      "default": "I=J"
+    },
+    "output_format": {
+      "type": "select",
+      "label": "Format de sortie",
+      "options": ["separated", "concatenated"],
+      "default": "separated"
+    },
+    "strict": {
+      "type": "select",
+      "label": "Mode strict",
+      "options": ["strict", "smooth"],
+      "default": "smooth"
+    },
+    "embedded": {
+      "type": "boolean",
+      "label": "Code intégré dans le texte",
+      "default": false
+    },
+    "allowed_chars": {
+      "type": "string",
+      "label": "Caractères autorisés (séparateurs)",
+      "placeholder": "Exemple: ,.;:-",
+      "default": " ,.;:!?-_\n\r\t"
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Résultat"
+    }
+  }
+}
