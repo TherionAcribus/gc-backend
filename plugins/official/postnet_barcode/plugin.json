@@ -1,0 +1,78 @@
+{
+  "name": "postnet_barcode",
+  "version": "1.2.1",
+  "plugin_api_version": "2.0",
+  "description": "Plugin pour encoder/décoder les codes barres POSTNET (Postal Numeric Encoding Technique).",
+  "author": "MysteryAI Team",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Barcode", "SymbolsDecryption"],
+  "kinds": ["code"],
+  "brute_force": true,
+  "enable_scoring": true,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": true,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": true,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Texte/Code à traiter",
+      "placeholder": "Ex: 12345 ou ||:|:|:.||",
+      "required": true
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["encode", "decode"],
+      "default": "decode",
+      "required": true
+    },
+    "format": {
+      "type": "select",
+      "label": "Format de sortie (encodage uniquement)",
+      "options": ["auto", "zip5", "zip9", "zip11", "free"],
+      "default": "auto"
+    },
+    "visual_format": {
+      "type": "select",
+      "label": "Format visuel des barres",
+      "options": ["auto", "pipe_dot", "pipe_down", "binary"],
+      "default": "auto"
+    },
+    "checksum_mode": {
+      "type": "select",
+      "label": "Mode checksum",
+      "options": ["auto", "required", "optional", "none"],
+      "default": "auto"
+    },
+    "frame_bars": {
+      "type": "select",
+      "label": "Barres de début/fin",
+      "options": ["auto", "always", "never"],
+      "default": "auto"
+    },
+    "bruteforce": {
+      "type": "boolean",
+      "label": "Bruteforce",
+      "default": false
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Résultat"
+    }
+  }
+}
