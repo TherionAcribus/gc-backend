@@ -1,0 +1,49 @@
+{
+  "name": "shadok_numbers",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Numération Shadok (GA BU ZO MEU) : conversion décimal ↔ code Shadok.",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["NumeralSystems"],
+  "kinds": ["code"],
+  "brute_force": false,
+  "enable_scoring": false,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": false,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": false,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Nombre(s) ou code Shadok",
+      "placeholder": "Entrez un nombre décimal ou une chaîne Shadok...",
+      "required": true
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["encode", "decode"],
+      "default": "decode",
+      "required": true
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Résultat"
+    }
+  }
+}
