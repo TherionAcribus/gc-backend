@@ -1,0 +1,60 @@
+{
+  "name": "multitap_code",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Encodage/décodage du code Multitap (ABC) des anciens téléphones mobiles.",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Substitution", "Numbers"],
+  "kinds": ["code"],
+  "brute_force": true,
+  "enable_scoring": true,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": true,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": true,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Texte à traiter",
+      "placeholder": "Ex: 3 222 666 3 33 ou DCODE",
+      "required": true
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["decode", "encode", "detect"],
+      "default": "decode",
+      "required": true
+    },
+    "separator": {
+      "type": "select",
+      "label": "Séparateur",
+      "options": [
+        {"value": "auto", "label": "auto - détection automatique"},
+        {"value": "space", "label": "espace - 222 666 3 33"},
+        {"value": "dash", "label": "tiret - 222-666-3-33"},
+        {"value": "none", "label": "aucun - 222666333"}
+      ],
+      "default": "auto"
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Résultat"
+    }
+  }
+}
