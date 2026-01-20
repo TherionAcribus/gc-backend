@@ -1,0 +1,66 @@
+{
+  "name": "tom_tom",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Code Tom Tom (A-Tom-Tom) utilisant des barres obliques",
+  "author": "MysteryAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["SymbolsDecryption", "AlphabetsDecryption"],
+  "kinds": ["code"],
+  "brute_force": false,
+  "enable_scoring": true,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": true,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": true,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Texte à traiter",
+      "placeholder": "Entrez le texte en clair ou en code Tom Tom (/ et \\\\)...",
+      "required": true
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["decode", "encode", "detect"],
+      "default": "decode",
+      "required": true
+    },
+    "strict": {
+      "type": "select",
+      "label": "Mode de traitement",
+      "options": ["strict", "smooth"],
+      "default": "smooth"
+    },
+    "embedded": {
+      "type": "boolean",
+      "label": "Code intégré dans du texte",
+      "default": false
+    },
+    "allowed_chars": {
+      "type": "string",
+      "label": "Caractères de séparation autorisés",
+      "placeholder": "Exemple: espace, ponctuation...",
+      "default": " \t\r\n.:;,_-"
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Résultat"
+    }
+  }
+}
