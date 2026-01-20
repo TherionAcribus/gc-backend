@@ -1,0 +1,67 @@
+{
+  "name": "t9_code",
+  "version": "1.0.1",
+  "plugin_api_version": "2.0",
+  "description": "Chiffrement/déchiffrement T9 (prédictif) avec génération de variantes.",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["AlphabetsDecryption"],
+  "kinds": ["code"],
+  "brute_force": true,
+  "enable_scoring": true,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": false,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": false,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Texte à traiter",
+      "placeholder": "Entrez la séquence T9 ou le texte à coder",
+      "required": true
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["encode", "decode", "bruteforce"],
+      "default": "decode",
+      "required": true
+    },
+    "language": {
+      "type": "select",
+      "label": "Langue (priorité)",
+      "options": ["auto", "fr", "en", "de", "es", "it", "nl", "pt"],
+      "default": "auto"
+    },
+    "max_results": {
+      "type": "number",
+      "label": "Nombre max de résultats",
+      "min": 1,
+      "max": 50,
+      "default": 10
+    },
+    "bruteforce": {
+      "type": "boolean",
+      "label": "Forcer le mode bruteforce",
+      "default": false
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Texte transformé"
+    }
+  }
+}
