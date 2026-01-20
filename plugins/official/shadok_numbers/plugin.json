@@ -10,19 +10,19 @@
   "categories": ["NumeralSystems"],
   "kinds": ["code"],
   "brute_force": false,
-  "enable_scoring": false,
+  "enable_scoring": true,
   "accept_accents": false,
   "heavy_cpu": false,
   "needs_network": false,
   "needs_filesystem": false,
   "timeout_seconds": 30,
   "capabilities": {
-    "analyze": false,
+    "analyze": true,
     "decode": true,
     "encode": true
   },
   "defaults": {
-    "include_in_analysis": false,
+    "include_in_analysis": true,
     "include_in_decode": true
   },
   "input_types": {
@@ -35,7 +35,7 @@
     "mode": {
       "type": "select",
       "label": "Mode",
-      "options": ["encode", "decode"],
+      "options": ["encode", "decode", "detect"],
       "default": "decode",
       "required": true
     }

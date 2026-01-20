@@ -4,6 +4,14 @@ import re
 import time
 from typing import Any, Dict, List
 
+try:
+    from gc_backend.plugins.scoring import score_text
+
+    _SCORING_AVAILABLE = True
+except Exception:  # pragma: no cover - optional dependency
+    score_text = None
+    _SCORING_AVAILABLE = False
+
 
 class ShadokNumbersPlugin:
     DIGIT_TO_SYLLABLE = {"0": "GA", "1": "BU", "2": "ZO", "3": "MEU"}
@@ -80,10 +88,56 @@ class ShadokNumbersPlugin:
         decoded_numbers = [self._decode_token(tok) for tok in tokens if tok]
         return " ".join(decoded_numbers)
 
+    def _is_truthy(self, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return False
+        return str(value).strip().lower() in {"true", "1", "yes", "on"}
+
+    def _detect_fragments(self, text: str) -> Dict[str, Any]:
+        """Find Shadok sequences and decode them for reference."""
+        if not text:
+            return {"fragments": [], "decoded_text": ""}
+
+        pattern = re.compile(r"(GA|BU|ZO|MEU|ME)+", re.IGNORECASE)
+        fragments = []
+        for match in pattern.finditer(text):
+            val = match.group(0)
+            try:
+                decoded_val = self._decode_token(val)
+                fragments.append(
+                    {
+                        "value": val,
+                        "start": match.start(),
+                        "end": match.end(),
+                        "decoded": decoded_val,
+                    }
+                )
+            except ValueError:
+                continue
+
+        decoded_text = text
+        # Replace from end to start to keep indices valid
+        for frag in sorted(fragments, key=lambda f: f["start"], reverse=True):
+            decoded_text = decoded_text[: frag["start"]] + frag["decoded"] + decoded_text[frag["end"] :]
+
+        return {"fragments": fragments, "decoded_text": decoded_text}
+
+    def _get_score(self, text: str, context: Dict[str, Any]) -> Dict[str, Any] | None:
+        if not _SCORING_AVAILABLE or not score_text:
+            return None
+        try:
+            return score_text(text, context=context)
+        except Exception:
+            return None
+
     def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         start_time = time.time()
         mode = str(inputs.get("mode", "encode")).lower()
         text = inputs.get("text", "")
+        context = inputs.get("context", {})
+        enable_scoring = self._is_truthy(inputs.get("enable_scoring", True))
 
         standardized_response = {
             "status": "success",
@@ -118,25 +172,80 @@ class ShadokNumbersPlugin:
                 result_text = self.encode(text)
                 confidence = 1.0
                 summary_msg = "Encodage Shadok réussi"
-            else:
+                scoring_info = self._get_score(result_text, context) if enable_scoring else None
+
+            elif mode == "decode":
                 result_text = self.decode(text)
                 confidence = 0.95
+                scoring_info = self._get_score(result_text, context) if enable_scoring else None
+                if scoring_info and "score" in scoring_info:
+                    confidence = float(scoring_info["score"])
                 summary_msg = "Décodage Shadok réussi"
+
+            elif mode == "detect":
+                detection = self._detect_fragments(text)
+                fragments = detection["fragments"]
+                result_text = detection["decoded_text"]
+                if not fragments:
+                    standardized_response["status"] = "error"
+                    standardized_response["summary"]["message"] = "Aucune séquence Shadok détectée"
+                    standardized_response["plugin_info"]["execution_time"] = int(
+                        (time.time() - start_time) * 1000
+                    )
+                    return standardized_response
+
+                scoring_info = self._get_score(result_text, context) if enable_scoring else None
+                confidence = scoring_info.get("score", 0.6) if scoring_info else 0.6
+                summary_msg = f"{len(fragments)} fragment(s) Shadok détecté(s)"
+
+                standardized_response["results"].append(
+                    {
+                        "id": "result_1",
+                        "text_output": result_text,
+                        "confidence": confidence,
+                        "parameters": {"mode": "detect"},
+                        "metadata": {
+                            "fragments_count": len(fragments),
+                            "fragments": fragments,
+                        },
+                        **({"scoring": scoring_info} if scoring_info else {}),
+                    }
+                )
+
+                standardized_response["summary"].update(
+                    {
+                        "best_result_id": "result_1",
+                        "total_results": 1,
+                        "message": summary_msg,
+                    }
+                )
+
+                standardized_response["plugin_info"]["execution_time"] = int((time.time() - start_time) * 1000)
+                return standardized_response
+
+            else:
+                standardized_response["status"] = "error"
+                standardized_response["summary"]["message"] = f"Mode inconnu : {mode}"
+                standardized_response["plugin_info"]["execution_time"] = int((time.time() - start_time) * 1000)
+                return standardized_response
+
         except Exception as exc:
             standardized_response["status"] = "error"
             standardized_response["summary"]["message"] = str(exc)
             standardized_response["plugin_info"]["execution_time"] = int((time.time() - start_time) * 1000)
             return standardized_response
 
-        standardized_response["results"].append(
-            {
-                "id": "result_1",
-                "text_output": result_text,
-                "confidence": confidence,
-                "parameters": {"mode": mode},
-                "metadata": {"processed_chars": len(text)},
-            }
-        )
+        result_entry = {
+            "id": "result_1",
+            "text_output": result_text,
+            "confidence": confidence,
+            "parameters": {"mode": mode},
+            "metadata": {"processed_chars": len(text)},
+        }
+        if enable_scoring and "scoring_info" in locals() and scoring_info:
+            result_entry["scoring"] = scoring_info
+
+        standardized_response["results"].append(result_entry)
 
         standardized_response["summary"].update(
             {
