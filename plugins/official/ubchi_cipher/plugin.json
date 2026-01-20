@@ -1,0 +1,68 @@
+{
+  "name": "ubchi_cipher",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Chiffre Ubchi (double transposition) avec lettres nulles.",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Transposition"],
+  "kinds": ["code"],
+  "brute_force": true,
+  "enable_scoring": true,
+  "accept_accents": false,
+  "heavy_cpu": true,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": false,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": false,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Texte à traiter",
+      "placeholder": "Entrez le texte à chiffrer ou déchiffrer...",
+      "required": true
+    },
+    "keyword": {
+      "type": "string",
+      "label": "Mot-clé",
+      "placeholder": "Clé de transposition (ex: UBER)",
+      "default": "UBER"
+    },
+    "null_letters": {
+      "type": "number",
+      "label": "Nombre de lettres nulles (encodage)",
+      "min": 0,
+      "max": 10,
+      "step": 1,
+      "default": 1
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["encode", "decode", "bruteforce", "detect"],
+      "default": "decode",
+      "required": true
+    },
+    "bruteforce": {
+      "type": "boolean",
+      "label": "Forcer le mode bruteforce",
+      "default": false
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Texte transformé"
+    }
+  }
+}
