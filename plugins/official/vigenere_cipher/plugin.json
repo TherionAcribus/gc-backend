@@ -1,0 +1,78 @@
+{
+  "name": "vigenere_cipher",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Chiffre de Vigenère (encode/décode).",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["AlphabetsDecryption"],
+  "kinds": ["code"],
+  "brute_force": true,
+  "enable_scoring": true,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": false,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": false,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Texte à traiter",
+      "placeholder": "Entrez le texte ici...",
+      "required": true
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["decode", "encode", "detect", "bruteforce"],
+      "default": "decode",
+      "required": true
+    },
+    "key": {
+      "type": "string",
+      "label": "Clé de chiffrement",
+      "placeholder": "Entrez la clé (lettres sans espaces)",
+      "default": ""
+    },
+    "strict": {
+      "type": "select",
+      "label": "Mode strict",
+      "options": ["strict", "smooth"],
+      "default": "smooth"
+    },
+    "candidate_keys": {
+      "type": "string",
+      "label": "Clés candidates (bruteforce)",
+      "placeholder": "Ex: CLE,SECRET,UBER"
+    },
+    "max_results": {
+      "type": "number",
+      "label": "Nombre max de résultats",
+      "min": 1,
+      "max": 50,
+      "default": 10
+    },
+    "bruteforce": {
+      "type": "boolean",
+      "label": "Forcer le mode bruteforce",
+      "default": false
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Texte transformé"
+    }
+  }
+}
