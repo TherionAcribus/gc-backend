@@ -1371,7 +1371,7 @@ def import_bookmark_list():
                 
                 # Get geocache codes from the list
                 try:
-                    gc_codes = bookmark_importer.get_geocache_codes_from_list(bookmark_code)
+                    gc_codes = bookmark_importer.get_geocaches_from_list(bookmark_code)
                 except LookupError as e:
                     error_msg = str(e)
                     if 'not_found' in error_msg:
