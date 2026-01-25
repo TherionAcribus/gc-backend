@@ -16,6 +16,8 @@ from ..geocaches.scraper import GeocachingScraper
 from ..geocaches.search_client import GeocachingSearchClient
 from ..geocaches.image_storage import remove_geocache_dir
 from ..geocaches.image_sync import ensure_images_v2_for_geocache
+from ..geocaches.bookmark_list_importer import BookmarkListImporter
+from ..geocaches.pocket_query_importer import PocketQueryImporter
 from ..utils.preferences import get_value_or_default
 
 bp = Blueprint('geocaches', __name__)
@@ -1298,6 +1300,275 @@ def import_gpx():
 
     except Exception as e:
         logger.error(f"Erreur lors de l'import GPX: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.get('/api/geocaches/user-bookmark-lists')
+def get_user_bookmark_lists():
+    """Récupère les listes de favoris de l'utilisateur."""
+    try:
+        importer = GeocacheImporter()
+        bookmark_importer = BookmarkListImporter(session=importer.scraper.session)
+        
+        lists = bookmark_importer.get_user_bookmark_lists()
+        
+        return jsonify({'lists': lists}), 200
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des listes de favoris: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.get('/api/geocaches/user-pocket-queries')
+def get_user_pocket_queries():
+    """Récupère les Pocket Queries de l'utilisateur."""
+    try:
+        importer = GeocacheImporter()
+        pq_importer = PocketQueryImporter(session=importer.scraper.session)
+        
+        queries = pq_importer.get_user_pocket_queries()
+        
+        return jsonify({'queries': queries}), 200
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des Pocket Queries: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.post('/api/geocaches/import-bookmark-list')
+def import_bookmark_list():
+    """Importe des géocaches depuis une liste de favoris (Bookmark List).
+    
+    Extrait les codes GC de la liste et les importe un par un.
+    Emet un flux JSON par lignes (progress streaming) compatible avec le frontend.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        bookmark_code = data.get('bookmark_code', '').strip()
+        zone_id_raw = data.get('zone_id')
+        
+        if not bookmark_code:
+            return jsonify({'error': 'Code de liste de favoris manquant'}), 400
+        if not zone_id_raw:
+            return jsonify({'error': 'ID de zone manquant'}), 400
+        
+        try:
+            zone_id = int(zone_id_raw)
+        except ValueError:
+            return jsonify({'error': 'ID de zone invalide'}), 400
+        
+        importer = GeocacheImporter()
+        bookmark_importer = BookmarkListImporter(session=importer.scraper.session)
+        
+        def generate():
+            try:
+                yield json.dumps({'message': f'Récupération de la liste {bookmark_code}...', 'progress': 0}) + '\n'
+                
+                # Get list info
+                try:
+                    list_info = bookmark_importer.get_list_info(bookmark_code)
+                    yield json.dumps({'message': f'Liste: {list_info.get("name", bookmark_code)}', 'progress': 5}) + '\n'
+                except Exception as e:
+                    logger.warning(f"Could not get list info: {e}")
+                
+                # Get geocache codes from the list
+                try:
+                    gc_codes = bookmark_importer.get_geocache_codes_from_list(bookmark_code)
+                except LookupError as e:
+                    error_msg = str(e)
+                    if 'not_found' in error_msg:
+                        yield json.dumps({'error': True, 'message': 'Liste de favoris introuvable'}) + '\n'
+                    elif 'private' in error_msg:
+                        yield json.dumps({'error': True, 'message': 'Liste de favoris privée ou authentification requise'}) + '\n'
+                    elif 'no_geocaches' in error_msg:
+                        yield json.dumps({'error': True, 'message': 'Aucune géocache trouvée dans cette liste'}) + '\n'
+                    else:
+                        yield json.dumps({'error': True, 'message': f'Erreur: {error_msg}'}) + '\n'
+                    return
+                except Exception as e:
+                    yield json.dumps({'error': True, 'message': f'Erreur lors de la récupération de la liste: {str(e)}'}) + '\n'
+                    return
+                
+                total = len(gc_codes)
+                yield json.dumps({'message': f'{total} géocache(s) trouvée(s) dans la liste', 'progress': 10}) + '\n'
+                
+                success = 0
+                errors = 0
+                for idx, code in enumerate(gc_codes, start=1):
+                    try:
+                        importer.import_by_code(zone_id, code)
+                        success += 1
+                        msg = f'Importée: {code} ({idx}/{total})'
+                    except Exception as e:
+                        errors += 1
+                        msg = f'Erreur {code}: {e}'
+                    
+                    pct = 10 + int(idx / total * 90)
+                    yield json.dumps({'message': msg, 'progress': pct}) + '\n'
+                
+                summary = f'Importation terminée: {success} succès'
+                if errors:
+                    summary += f', {errors} erreurs'
+                yield json.dumps({
+                    'progress': 100,
+                    'message': summary,
+                    'final_summary': True,
+                    'stats': {'success': success, 'errors': errors, 'total': total}
+                }) + '\n'
+                
+            except Exception as e:
+                logger.error(f"Erreur import bookmark list: {e}", exc_info=True)
+                yield json.dumps({'error': True, 'message': f'Erreur: {str(e)}'}) + '\n'
+        
+        return Response(stream_with_context(generate()), content_type='application/json')
+    
+    except Exception as e:
+        logger.error(f"Erreur lors de l'import de la liste de favoris: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.post('/api/geocaches/import-pocket-query')
+def import_pocket_query():
+    """Importe des géocaches depuis une Pocket Query.
+    
+    Télécharge le fichier GPX/ZIP de la Pocket Query et l'importe.
+    Emet un flux JSON par lignes (progress streaming) compatible avec le frontend.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        pq_code = data.get('pq_code', '').strip()
+        zone_id_raw = data.get('zone_id')
+        
+        if not pq_code:
+            return jsonify({'error': 'Code de Pocket Query manquant'}), 400
+        if not zone_id_raw:
+            return jsonify({'error': 'ID de zone manquant'}), 400
+        
+        try:
+            zone_id = int(zone_id_raw)
+        except ValueError:
+            return jsonify({'error': 'ID de zone invalide'}), 400
+        
+        importer = GeocacheImporter()
+        pq_importer = PocketQueryImporter(session=importer.scraper.session)
+        
+        def extract_gc_codes_from_gpx_bytes(data: bytes) -> list[str]:
+            codes: list[str] = []
+            try:
+                root = ET.fromstring(data)
+            except ET.ParseError:
+                return codes
+            
+            namespaces = [
+                {'default': 'http://www.topografix.com/GPX/1/0'},
+                {'default': 'http://www.topografix.com/GPX/1/1'},
+                {},
+            ]
+            
+            seen = set()
+            for ns in namespaces:
+                if ns:
+                    wpts = root.findall('default:wpt', ns)
+                else:
+                    wpts = root.findall('wpt')
+                for w in wpts:
+                    name_elem = w.find('default:name', ns) if ns else w.find('name')
+                    if name_elem is None or not (name_elem.text or '').strip():
+                        continue
+                    waypoint_code = name_elem.text.strip()
+                    if waypoint_code.startswith('GC') and '-' not in waypoint_code:
+                        if waypoint_code not in seen:
+                            seen.add(waypoint_code)
+                            codes.append(waypoint_code)
+            return codes
+        
+        def generate():
+            try:
+                yield json.dumps({'message': f'Téléchargement de la Pocket Query {pq_code}...', 'progress': 0}) + '\n'
+                
+                # Download the pocket query
+                try:
+                    file_bytes = pq_importer.download_pocket_query_gpx(pq_code)
+                    yield json.dumps({'message': f'Fichier téléchargé ({len(file_bytes)} octets)', 'progress': 5}) + '\n'
+                except LookupError as e:
+                    error_msg = str(e)
+                    if 'not_found' in error_msg:
+                        yield json.dumps({'error': True, 'message': 'Pocket Query introuvable'}) + '\n'
+                    elif 'premium' in error_msg:
+                        yield json.dumps({'error': True, 'message': 'Pocket Query nécessite un compte Premium ou une authentification'}) + '\n'
+                    else:
+                        yield json.dumps({'error': True, 'message': f'Erreur: {error_msg}'}) + '\n'
+                    return
+                except Exception as e:
+                    yield json.dumps({'error': True, 'message': f'Erreur lors du téléchargement: {str(e)}'}) + '\n'
+                    return
+                
+                # Extract GC codes from the downloaded file
+                yield json.dumps({'message': 'Analyse du fichier...', 'progress': 10}) + '\n'
+                
+                gc_codes: list[str] = []
+                
+                # Check if it's a ZIP file
+                if file_bytes[:2] == b'PK':
+                    try:
+                        with zipfile.ZipFile(io.BytesIO(file_bytes), 'r') as zf:
+                            members = [m for m in zf.namelist() if m.lower().endswith('.gpx')]
+                            if not members:
+                                yield json.dumps({'error': True, 'message': 'Aucun fichier GPX dans l\'archive ZIP'}) + '\n'
+                                return
+                            yield json.dumps({'message': f'{len(members)} fichier(s) GPX détecté(s)', 'progress': 15}) + '\n'
+                            for m in members:
+                                data = zf.read(m)
+                                codes = extract_gc_codes_from_gpx_bytes(data)
+                                gc_codes.extend(codes)
+                    except Exception as e:
+                        yield json.dumps({'error': True, 'message': f'Erreur lors de la lecture du ZIP: {str(e)}'}) + '\n'
+                        return
+                else:
+                    # Assume it's a GPX file
+                    codes = extract_gc_codes_from_gpx_bytes(file_bytes)
+                    gc_codes.extend(codes)
+                
+                # Deduplicate
+                gc_codes = list(dict.fromkeys(gc_codes))
+                total = len(gc_codes)
+                
+                if total == 0:
+                    yield json.dumps({'error': True, 'message': 'Aucun code GC détecté dans le fichier'}) + '\n'
+                    return
+                
+                yield json.dumps({'message': f'{total} géocache(s) trouvée(s)', 'progress': 20}) + '\n'
+                
+                success = 0
+                errors = 0
+                for idx, code in enumerate(gc_codes, start=1):
+                    try:
+                        importer.import_by_code(zone_id, code)
+                        success += 1
+                        msg = f'Importée: {code} ({idx}/{total})'
+                    except Exception as e:
+                        errors += 1
+                        msg = f'Erreur {code}: {e}'
+                    
+                    pct = 20 + int(idx / total * 80)
+                    yield json.dumps({'message': msg, 'progress': pct}) + '\n'
+                
+                summary = f'Importation terminée: {success} succès'
+                if errors:
+                    summary += f', {errors} erreurs'
+                yield json.dumps({
+                    'progress': 100,
+                    'message': summary,
+                    'final_summary': True,
+                    'stats': {'success': success, 'errors': errors, 'total': total}
+                }) + '\n'
+                
+            except Exception as e:
+                logger.error(f"Erreur import pocket query: {e}", exc_info=True)
+                yield json.dumps({'error': True, 'message': f'Erreur: {str(e)}'}) + '\n'
+        
+        return Response(stream_with_context(generate()), content_type='application/json')
+    
+    except Exception as e:
+        logger.error(f"Erreur lors de l'import de la Pocket Query: {e}")
         return jsonify({'error': str(e)}), 500
 
 
