@@ -13,7 +13,8 @@ from datetime import datetime
 from typing import Optional
 
 import requests
-import browser_cookie3
+
+from .geocaching_auth import get_auth_service
 
 logger = logging.getLogger(__name__)
 
@@ -50,46 +51,16 @@ class GeocachingLogsClient:
     LOGS_API_URL = 'https://www.geocaching.com/seek/geocache.logbook'
     
     def __init__(self, session: Optional[requests.Session] = None) -> None:
-        self.session = session or requests.Session()
+        # Utiliser la session du service d'authentification centralisé
+        if session is not None:
+            self.session = session
+        else:
+            auth_service = get_auth_service()
+            self.session = auth_service.get_session()
+        
         self.session.headers.setdefault('User-Agent', 'GeoApp/1.0 (+https://example.local)')
         self.session.headers.setdefault('Accept', 'application/json')
         self.session.headers.setdefault('X-Requested-With', 'XMLHttpRequest')
-        
-        # Charger les cookies du navigateur pour l'authentification
-        self._load_browser_cookies()
-    
-    def _load_browser_cookies(self) -> None:
-        """Charge les cookies du navigateur (Firefox, Chrome, Edge) pour s'authentifier sur Geocaching.com"""
-        logger.info("Loading browser cookies for Geocaching.com logs API...")
-        
-        browsers = [
-            ('Firefox', browser_cookie3.firefox),
-            ('Chrome', browser_cookie3.chrome),
-            ('Edge', browser_cookie3.edge),
-        ]
-        
-        for browser_name, browser_func in browsers:
-            try:
-                logger.debug(f"Trying to load cookies from {browser_name}...")
-                cookies = browser_func(domain_name='geocaching.com')
-                
-                # Vérifier qu'on a bien des cookies
-                cookie_count = 0
-                for cookie in cookies:
-                    self.session.cookies.set_cookie(cookie)
-                    cookie_count += 1
-                
-                if cookie_count > 0:
-                    logger.info(f"Successfully loaded {cookie_count} cookies from {browser_name}")
-                    return
-                else:
-                    logger.debug(f"No cookies found in {browser_name}")
-                    
-            except Exception as e:
-                logger.debug(f"Failed to load cookies from {browser_name}: {e}")
-                continue
-        
-        logger.warning("No browser cookies loaded - logs API may fail if authentication is required!")
     
     def get_logs(
         self, 

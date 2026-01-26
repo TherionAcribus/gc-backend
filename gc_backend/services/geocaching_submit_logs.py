@@ -5,46 +5,24 @@ from datetime import date as date_type
 from datetime import datetime, time, timezone
 from typing import Any, Optional
 
-import browser_cookie3
 import requests
+
+from .geocaching_auth import get_auth_service
 
 logger = logging.getLogger(__name__)
 
 
 class GeocachingSubmitLogsClient:
     def __init__(self, session: Optional[requests.Session] = None) -> None:
-        self.session = session or requests.Session()
+        # Utiliser la session du service d'authentification centralisé
+        if session is not None:
+            self.session = session
+        else:
+            auth_service = get_auth_service()
+            self.session = auth_service.get_session()
+        
         self.session.headers.setdefault('User-Agent', 'GeoApp/1.0 (+https://example.local)')
         self.session.headers.setdefault('Accept', 'application/json')
-        self._load_browser_cookies()
-
-    def _load_browser_cookies(self) -> None:
-        logger.info('Loading browser cookies for Geocaching.com log submit API...')
-
-        browsers = [
-            ('Firefox', browser_cookie3.firefox),
-            ('Chrome', browser_cookie3.chrome),
-            ('Edge', browser_cookie3.edge),
-        ]
-
-        for browser_name, browser_func in browsers:
-            try:
-                logger.debug('Trying to load cookies from %s...', browser_name)
-                cookies = browser_func(domain_name='geocaching.com')
-
-                cookie_count = 0
-                for cookie in cookies:
-                    self.session.cookies.set_cookie(cookie)
-                    cookie_count += 1
-
-                if cookie_count > 0:
-                    logger.info('Successfully loaded %s cookies from %s', cookie_count, browser_name)
-                    return
-            except Exception as e:  # pragma: no cover
-                logger.debug('Failed to load cookies from %s: %s', browser_name, e)
-                continue
-
-        logger.warning('No browser cookies loaded - log submit API may fail if authentication is required!')
 
     def get_csrf_token(self) -> str | None:
         url = 'https://www.geocaching.com/api/auth/csrf'

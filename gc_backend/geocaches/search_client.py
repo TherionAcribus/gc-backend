@@ -16,7 +16,8 @@ from typing import Any, Optional
 
 import requests
 
-from .scraper import GC_CODE_RE, GeocachingScraper
+from .scraper import GC_CODE_RE
+from ..services.geocaching_auth import get_auth_service
 
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,15 @@ class GeocachingSearchClient:
     API_URL = "https://www.geocaching.com/api/proxy/web/search/v2"
 
     def __init__(self, session: Optional[requests.Session] = None) -> None:
-        self.session = session or GeocachingScraper().session
+        if session is not None:
+            self.session = session
+        else:
+            auth_service = get_auth_service()
+            self.session = auth_service.get_session()
+            
+            if not auth_service.is_logged_in():
+                logger.warning("Not logged in to Geocaching.com - search may fail!")
+                logger.warning("Please configure authentication in GeoApp preferences.")
 
     def search(
         self,

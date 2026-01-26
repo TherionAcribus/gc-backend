@@ -9,9 +9,9 @@ from typing import Optional
 
 import requests
 from bs4 import BeautifulSoup
-import browser_cookie3
 
 from ..utils.html_cleaner import html_to_text_with_linebreaks
+from ..services.geocaching_auth import get_auth_service
 
 
 logger = logging.getLogger(__name__)
@@ -58,45 +58,16 @@ class GeocachingScraper:
     BASE_URL = 'https://www.geocaching.com/geocache/'
 
     def __init__(self, session: Optional[requests.Session] = None) -> None:
-        self.session = session or requests.Session()
-        self.session.headers.setdefault('User-Agent', 'GeoApp/1.0 (+https://example.local)')
-        
-        # Charger les cookies du navigateur pour l'authentification
-        self._load_browser_cookies()
-    
-    def _load_browser_cookies(self) -> None:
-        """Charge les cookies du navigateur (Firefox, Chrome, Edge) pour s'authentifier sur Geocaching.com"""
-        logger.info("Loading browser cookies for Geocaching.com authentication...")
-        
-        browsers = [
-            ('Firefox', browser_cookie3.firefox),
-            ('Chrome', browser_cookie3.chrome),
-            ('Edge', browser_cookie3.edge),
-        ]
-        
-        for browser_name, browser_func in browsers:
-            try:
-                logger.debug(f"Trying to load cookies from {browser_name}...")
-                cookies = browser_func(domain_name='geocaching.com')
-                
-                # Vérifier qu'on a bien des cookies
-                cookie_count = 0
-                for cookie in cookies:
-                    self.session.cookies.set_cookie(cookie)
-                    cookie_count += 1
-                
-                if cookie_count > 0:
-                    logger.info(f"Successfully loaded {cookie_count} cookies from {browser_name}")
-                    return
-                else:
-                    logger.debug(f"No cookies found in {browser_name}")
-                    
-            except Exception as e:
-                logger.debug(f"Failed to load cookies from {browser_name}: {e}")
-                continue
-        
-        logger.warning("No browser cookies loaded - scraping may fail if authentication is required!")
-        logger.warning("Please make sure you are logged in to Geocaching.com in Firefox, Chrome, or Edge.")
+        # Utiliser la session du service d'authentification centralisé
+        if session is not None:
+            self.session = session
+        else:
+            auth_service = get_auth_service()
+            self.session = auth_service.get_session()
+            
+            if not auth_service.is_logged_in():
+                logger.warning("Not logged in to Geocaching.com - scraping may fail!")
+                logger.warning("Please configure authentication in GeoApp preferences.")
 
     @staticmethod
     def validate_gc_code(gc_code: str) -> str:
