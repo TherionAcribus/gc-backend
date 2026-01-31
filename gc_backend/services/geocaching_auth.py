@@ -780,8 +780,6 @@ class GeocachingAuthService:
                 
                 self._session.cookies.clear()
         
-        self._clear_saved_credentials()
-        
         self._auth_state = AuthState(
             status=AuthStatus.LOGGED_OUT,
             method=AuthMethod.NONE
@@ -800,6 +798,10 @@ class GeocachingAuthService:
         Returns:
             État de l'authentification
         """
+        # S'assurer qu'une session existe afin de tenter une restauration automatique
+        if self._session is None:
+            self.get_session()
+
         # Vérifier si le cache est encore valide
         if not force_check and self._auth_state.last_check:
             age = datetime.now() - self._auth_state.last_check
