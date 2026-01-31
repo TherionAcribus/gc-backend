@@ -42,6 +42,11 @@ def _auth_state_to_dict(state) -> dict:
             "public_guid": state.user_info.public_guid,
             "avatar_url": state.user_info.avatar_url,
             "finds_count": state.user_info.finds_count,
+            "hides_count": state.user_info.hides_count,
+            "favorite_points": state.user_info.favorite_points,
+            "awarded_favorite_points": state.user_info.awarded_favorite_points,
+            "stats_last_updated": state.user_info.stats_last_updated.isoformat() 
+                if state.user_info.stats_last_updated else None,
         }
     else:
         result["user"] = None
@@ -225,3 +230,89 @@ def test_connection():
     result["test_result"] = "ok" if result["success"] else "failed"
     
     return jsonify(result)
+
+
+@bp.route('/profile', methods=['GET'])
+def get_profile_stats():
+    """
+    Récupère les statistiques du profil utilisateur.
+    
+    Query params:
+        force: Si "true", force le rafraîchissement même si les stats sont récentes
+        
+    Returns:
+        {
+            "success": true/false,
+            "stats": {
+                "finds_count": 123,
+                "hides_count": 5,
+                "favorite_points": 45,
+                "awarded_favorite_points": 12,
+                "stats_last_updated": "2025-01-27T08:00:00"
+            } | null,
+            "error_message": "..." | null
+        }
+    """
+    force = request.args.get('force', '').lower() == 'true'
+    
+    auth_service = get_auth_service()
+    
+    if not auth_service.is_logged_in():
+        return jsonify({
+            "success": False,
+            "stats": None,
+            "error_message": "Not logged in"
+        }), 401
+    
+    stats = auth_service.fetch_profile_stats(force=force)
+    
+    if stats:
+        return jsonify({
+            "success": True,
+            "stats": stats,
+            "error_message": None
+        })
+    else:
+        return jsonify({
+            "success": False,
+            "stats": None,
+            "error_message": "Failed to fetch profile stats"
+        }), 500
+
+
+@bp.route('/profile/refresh', methods=['POST'])
+def refresh_profile_stats():
+    """
+    Force le rafraîchissement des statistiques du profil.
+    
+    Returns:
+        {
+            "success": true/false,
+            "stats": { ... } | null,
+            "error_message": "..." | null
+        }
+    """
+    auth_service = get_auth_service()
+    
+    if not auth_service.is_logged_in():
+        return jsonify({
+            "success": False,
+            "stats": None,
+            "error_message": "Not logged in"
+        }), 401
+    
+    logger.info("Forcing profile stats refresh")
+    stats = auth_service.fetch_profile_stats(force=True)
+    
+    if stats:
+        return jsonify({
+            "success": True,
+            "stats": stats,
+            "error_message": None
+        })
+    else:
+        return jsonify({
+            "success": False,
+            "stats": None,
+            "error_message": "Failed to refresh profile stats"
+        }), 500

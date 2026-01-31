@@ -56,6 +56,10 @@ class UserInfo:
     avatar_url: Optional[str] = None
     date_format: Optional[str] = None
     finds_count: Optional[int] = None
+    hides_count: Optional[int] = None
+    favorite_points: Optional[int] = None  # Total PF gagnés
+    awarded_favorite_points: Optional[int] = None  # PF disponibles à distribuer
+    stats_last_updated: Optional[datetime] = None
 
 
 @dataclass
@@ -561,6 +565,207 @@ class GeocachingAuthService:
                 
         except Exception as e:
             logger.warning(f"Failed to fetch user info: {e}", exc_info=True)
+    
+    # ==================== PROFILE STATS ====================
+    
+    PROFILE_STATS_URI = "https://www.geocaching.com/api/proxy/web/v1/users/me"
+    
+    def fetch_profile_stats(self, force: bool = False) -> Optional[dict]:
+        """
+        Récupère les statistiques du profil utilisateur.
+        
+        Args:
+            force: Si True, force la récupération même si les stats sont récentes
+            
+        Returns:
+            Dict avec les stats ou None si erreur
+        """
+        if not self.is_logged_in():
+            logger.warning("Cannot fetch profile stats: not logged in")
+            return None
+        
+        # Vérifier si on a des stats récentes (moins de 5 minutes)
+        if not force and self._auth_state.user_info and self._auth_state.user_info.stats_last_updated:
+            age = datetime.now() - self._auth_state.user_info.stats_last_updated
+            if age < timedelta(minutes=5):
+                return self._get_current_stats()
+        
+        try:
+            # Utiliser l'API proxy de Geocaching.com
+            resp = self._session.get(
+                self.PROFILE_STATS_URI,
+                headers={
+                    'Accept': 'application/json',
+                },
+                timeout=30
+            )
+            
+            logger.info(f"Profile stats API response: status={resp.status_code}")
+            
+            if resp.status_code != 200:
+                logger.warning(f"Failed to fetch profile stats: status {resp.status_code}, body={resp.text[:500]}")
+                # Essayer la méthode alternative via le dashboard
+                return self._fetch_profile_stats_from_dashboard()
+            
+            data = resp.json()
+            
+            # Log pour debug
+            logger.info(f"API response keys: {list(data.keys())}")
+            logger.debug(f"Full API response: {data}")
+            
+            # Extraire les stats
+            if self._auth_state.user_info:
+                self._auth_state.user_info.finds_count = data.get('findCount', 0)
+                self._auth_state.user_info.hides_count = data.get('hideCount', 0)
+                self._auth_state.user_info.favorite_points = data.get('favoritePoints', 0)
+                self._auth_state.user_info.awarded_favorite_points = data.get('awardedFavoritePoints', 0)
+                self._auth_state.user_info.stats_last_updated = datetime.now()
+                
+                logger.info(f"Profile stats updated: finds={self._auth_state.user_info.finds_count}, "
+                           f"hides={self._auth_state.user_info.hides_count}, "
+                           f"PF={self._auth_state.user_info.awarded_favorite_points}")
+            
+            return self._get_current_stats()
+            
+        except Exception as e:
+            logger.warning(f"Failed to fetch profile stats: {e}", exc_info=True)
+            # Essayer la méthode alternative
+            return self._fetch_profile_stats_from_dashboard()
+    
+    def _fetch_profile_stats_from_dashboard(self) -> Optional[dict]:
+        """
+        Méthode alternative: récupère les stats depuis le profil public.
+        Utilisée si l'API proxy ne fonctionne pas.
+        """
+        try:
+            # Essayer d'abord le profil public de l'utilisateur
+            if self._auth_state.user_info and self._auth_state.user_info.username:
+                profile_url = f"https://www.geocaching.com/p/default.aspx?u={self._auth_state.user_info.username}"
+                logger.info(f"Fetching profile stats from public profile: {profile_url}")
+                resp = self._session.get(profile_url, timeout=30)
+                
+                if resp.status_code == 200:
+                    html = resp.text
+                    
+                    # Le profil public contient les stats dans un format plus structuré
+                    # Chercher dans les sections de stats
+                    finds_match = re.search(r'<strong[^>]*>(\d+)</strong>\s*(?:<[^>]*>)*\s*Finds?', html, re.IGNORECASE)
+                    hides_match = re.search(r'<strong[^>]*>(\d+)</strong>\s*(?:<[^>]*>)*\s*Hides?', html, re.IGNORECASE)
+                    
+                    # Pour les favorite points, chercher dans la section appropriée
+                    fp_match = re.search(r'<strong[^>]*>(\d+)</strong>\s*(?:<[^>]*>)*\s*Favorite\s+Points?', html, re.IGNORECASE)
+                    
+                    if finds_match or hides_match or fp_match:
+                        logger.info(f"Found stats in public profile: finds={bool(finds_match)}, hides={bool(hides_match)}, fp={bool(fp_match)}")
+                        
+                        if self._auth_state.user_info:
+                            if finds_match:
+                                self._auth_state.user_info.finds_count = int(finds_match.group(1))
+                            if hides_match:
+                                self._auth_state.user_info.hides_count = int(hides_match.group(1))
+                            if fp_match:
+                                self._auth_state.user_info.awarded_favorite_points = int(fp_match.group(1))
+                            
+                            self._auth_state.user_info.stats_last_updated = datetime.now()
+                        
+                        return self._get_current_stats()
+            
+            # Fallback sur le dashboard si le profil public ne fonctionne pas
+            logger.info("Falling back to dashboard")
+            resp = self._session.get(self.DASHBOARD_URI, timeout=30)
+            if resp.status_code != 200:
+                logger.warning(f"Failed to fetch dashboard: status {resp.status_code}")
+                return None
+            
+            html = resp.text
+            
+            # Log un échantillon du HTML pour debug (section Favorites)
+            favorites_sample = re.search(r'Favorites?.{0,500}', html, re.IGNORECASE | re.DOTALL)
+            if favorites_sample:
+                logger.info(f"=== FAVORITES HTML SAMPLE ===\n{favorites_sample.group(0)}\n=== END SAMPLE ===")
+            
+            # Chercher les stats dans le HTML
+            # Pattern pour les nombres dans le dashboard
+            finds_match = re.search(r'data-finds-count="(\d+)"', html)
+            hides_match = re.search(r'data-hides-count="(\d+)"', html)
+            fp_match = re.search(r'data-favorite-points="(\d+)"', html)
+            
+            # Alternative: chercher dans le JSON embarqué
+            if not finds_match:
+                # Chercher dans serverParameters ou autre JSON
+                json_match = re.search(r'"findCount"\s*:\s*(\d+)', html)
+                if json_match:
+                    finds_match = json_match
+            
+            # Chercher d'autres patterns pour hideCount et favoritePoints
+            if not hides_match:
+                hides_match = re.search(r'"hideCount"\s*:\s*(\d+)', html)
+                if not hides_match:
+                    # Chercher "Hides" ou "Hidden" suivi d'un nombre
+                    hides_match = re.search(r'(?:Hides?|Hidden)\s*[:\s]*(\d+)', html, re.IGNORECASE)
+            
+            if not fp_match:
+                fp_match = re.search(r'"awardedFavoritePoints"\s*:\s*(\d+)', html)
+                if not fp_match:
+                    # Chercher spécifiquement "Favorite points to award: <strong>32</strong>"
+                    fp_match = re.search(r'Favorite\s+points?\s+to\s+award\s*:\s*<strong>(\d+)</strong>', html, re.IGNORECASE)
+                if not fp_match:
+                    # Fallback sans le tag <strong>
+                    fp_match = re.search(r'Favorite\s+points?\s+to\s+award\s*:\s*(\d+)', html, re.IGNORECASE)
+                if not fp_match:
+                    # Dernier fallback: chercher "Favorite Points" ou "FP" suivi d'un nombre
+                    fp_match = re.search(r'(?:Favorite\s+Points?|FP)\s*[:\s]*(\d+)', html, re.IGNORECASE)
+            
+            # Chercher dans les sections spécifiques du dashboard
+            if not hides_match or not fp_match:
+                # Chercher dans la section profile stats
+                stats_section = re.search(r'<div[^>]*class="[^"]*profile-stats[^"]*"[^>]*>(.*?)</div>', html, re.DOTALL)
+                if stats_section:
+                    stats_html = stats_section.group(1)
+                    if not hides_match:
+                        hides_match = re.search(r'(\d+)\s*(?:Hides?|Hidden)', stats_html, re.IGNORECASE)
+                    if not fp_match:
+                        fp_match = re.search(r'(\d+)\s*(?:Favorite\s+Points?|FP)', stats_html, re.IGNORECASE)
+            
+            logger.info(f"Dashboard parsing: finds={bool(finds_match)}, hides={bool(hides_match)}, fp={bool(fp_match)}")
+            
+            # Si toujours pas trouvé, chercher n'importe quel nombre près de "hide" pour debug
+            if not hides_match:
+                all_hides = re.findall(r'hide[^>]{0,50}?(\d+)', html, re.IGNORECASE)
+                if all_hides:
+                    logger.info(f"Found potential hide counts: {all_hides[:5]}")
+            
+            if self._auth_state.user_info:
+                if finds_match:
+                    self._auth_state.user_info.finds_count = int(finds_match.group(1))
+                if hides_match:
+                    self._auth_state.user_info.hides_count = int(hides_match.group(1))
+                if fp_match:
+                    self._auth_state.user_info.awarded_favorite_points = int(fp_match.group(1))
+                
+                self._auth_state.user_info.stats_last_updated = datetime.now()
+                
+                logger.info(f"Profile stats from dashboard: finds={self._auth_state.user_info.finds_count}")
+            
+            return self._get_current_stats()
+            
+        except Exception as e:
+            logger.warning(f"Failed to fetch stats from dashboard: {e}")
+            return None
+    
+    def _get_current_stats(self) -> Optional[dict]:
+        """Retourne les stats actuelles sous forme de dict."""
+        if not self._auth_state.user_info:
+            return None
+        
+        return {
+            "finds_count": self._auth_state.user_info.finds_count,
+            "hides_count": self._auth_state.user_info.hides_count,
+            "favorite_points": self._auth_state.user_info.favorite_points,
+            "awarded_favorite_points": self._auth_state.user_info.awarded_favorite_points,
+            "stats_last_updated": self._auth_state.user_info.stats_last_updated.isoformat() 
+                if self._auth_state.user_info.stats_last_updated else None
+        }
     
     # ==================== LOGOUT & STATUS ====================
     
