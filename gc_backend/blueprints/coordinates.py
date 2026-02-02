@@ -12,6 +12,61 @@ except ModuleNotFoundError:  # pragma: no cover
 
 coordinates_bp = Blueprint('coordinates', __name__)
 
+
+DDM_COMPONENT_REGEX = re.compile(
+    r'([NSWE])\s*(\d{1,3})\s*(?:[°º]|deg|degrees)?\s*([0-5]?\d(?:[.,]\d+)?)\s*[\'\'’′]?'
+)
+
+
+def _ddm_component_to_decimal(component: str) -> float:
+    """Convertit une composante DDM (ex: "N 48° 39.286'") en décimal."""
+    if not component:
+        raise ValueError("Composante DDM vide")
+
+    match = DDM_COMPONENT_REGEX.search(component.strip())
+    if not match:
+        raise ValueError(f"Format DDM invalide: {component}")
+
+    direction, degrees_str, minutes_str = match.groups()
+    degrees = int(degrees_str)
+    minutes = float(minutes_str.replace(',', '.'))
+
+    if minutes < 0 or minutes >= 60:
+        raise ValueError(f"Minutes hors bornes: {minutes}")
+
+    direction = direction.upper()
+    if direction in ('N', 'S') and not 0 <= degrees <= 90:
+        raise ValueError(f"Latitude hors bornes: {degrees}")
+    if direction in ('E', 'W') and not 0 <= degrees <= 180:
+        raise ValueError(f"Longitude hors bornes: {degrees}")
+
+    decimal = degrees + (minutes / 60.0)
+    if direction in ('S', 'W'):
+        decimal = -decimal
+
+    return round(decimal, 8)
+
+
+def convert_ddm_to_decimal(lat_ddm: str, lon_ddm: str) -> Dict[str, Optional[float]]:
+    """Convertit deux coordonnées DDM (latitude, longitude) en décimal."""
+    latitude = None
+    longitude = None
+
+    try:
+        latitude = _ddm_component_to_decimal(lat_ddm)
+    except Exception as exc:
+        print(f"[DEBUG] convert_ddm_to_decimal: impossible de convertir la latitude '{lat_ddm}': {exc}")
+
+    try:
+        longitude = _ddm_component_to_decimal(lon_ddm)
+    except Exception as exc:
+        print(f"[DEBUG] convert_ddm_to_decimal: impossible de convertir la longitude '{lon_ddm}': {exc}")
+
+    return {
+        "latitude": latitude,
+        "longitude": longitude
+    }
+
 # A PRIORI PLUS UTILISé..... Ne pas l'utiliser.... A supprimer....
 @coordinates_bp.route('/api/geocaches/save/<int:geocache_id>/coordinates', methods=['POST'])
 def save_geocache_coordinates(geocache_id):
