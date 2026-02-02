@@ -15,6 +15,10 @@ import time
 from typing import Any, Dict, List, Optional
 
 
+DEFAULT_ALLOWED_CHARS = " \t\r\n.:;,_-°"
+NON_BREAKING_WHITESPACES = "\u00a0\u202f"
+
+
 class ChemicalElementsPlugin:
     def __init__(self) -> None:
         self.name = "chemical_elements"
@@ -150,12 +154,7 @@ class ChemicalElementsPlugin:
         text = inputs.get("text", "")
         strict_mode = str(inputs.get("strict", "smooth")).lower() == "strict"
 
-        allowed_chars = inputs.get("allowed_chars")
-        if allowed_chars is None:
-            allowed_chars = " \t\r\n.:;,_-°"
-        if isinstance(allowed_chars, list):
-            allowed_chars = "".join(allowed_chars)
-        allowed_chars = str(allowed_chars)
+        allowed_chars = self._prepare_allowed_chars(inputs.get("allowed_chars"))
 
         embedded = bool(inputs.get("embedded", True))
 
@@ -244,8 +243,7 @@ class ChemicalElementsPlugin:
             return self._error_response(f"Erreur pendant le traitement: {str(e)}", start_time)
 
     def check_code(self, text: str, strict: bool = False, allowed_chars: Optional[str] = None, embedded: bool = False) -> Dict[str, Any]:
-        if allowed_chars is None:
-            allowed_chars = " \t\r\n.:;,_-°"
+        allowed_chars = self._prepare_allowed_chars(allowed_chars)
 
         if strict:
             if embedded:
@@ -269,7 +267,21 @@ class ChemicalElementsPlugin:
 
         return self._extract_elements(text, allowed_chars)
 
-    def _extract_elements(self, text: str, allowed_chars: str) -> Dict[str, Any]:
+    def _prepare_allowed_chars(self, allowed_chars: Optional[Any]) -> str:
+        if allowed_chars is None:
+            allowed_chars = DEFAULT_ALLOWED_CHARS
+        if isinstance(allowed_chars, list):
+            allowed_chars = "".join(allowed_chars)
+        allowed_chars = str(allowed_chars)
+
+        for char in NON_BREAKING_WHITESPACES:
+            if char not in allowed_chars:
+                allowed_chars += char
+
+        return allowed_chars
+
+    def _extract_elements(self, text: str, allowed_chars: Optional[str]) -> Dict[str, Any]:
+        allowed_chars = self._prepare_allowed_chars(allowed_chars)
         esc_punct = re.escape(allowed_chars)
         pattern = f"[^{esc_punct}]+"
 

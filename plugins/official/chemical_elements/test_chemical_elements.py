@@ -43,3 +43,13 @@ def test_detect_finds_symbols() -> None:
     result: Dict[str, Any] = plugin.execute({"mode": "detect", "text": "Au Ag Xx"})
     assert result["status"] == "ok"
     assert result["results"][0]["metadata"]["fragments_count"] == 2
+
+
+def test_decode_handles_non_breaking_space() -> None:
+    ChemicalElementsPlugin = _load_plugin_class()
+    plugin = ChemicalElementsPlugin()
+
+    text = "West:\u00a0 Rf Te"
+    result: Dict[str, Any] = plugin.execute({"mode": "decode", "text": text, "strict": "smooth", "embedded": True})
+    assert result["status"] == "ok"
+    assert "104" in result["results"][0]["text_output"]
