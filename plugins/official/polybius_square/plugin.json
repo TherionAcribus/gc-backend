@@ -86,5 +86,11 @@
       "type": "string",
       "label": "Résultat"
     }
+  },
+  "metasolver": {
+    "eligible": true,
+    "input_charset": "digits",
+    "tags": ["frequent", "substitution", "no_key"],
+    "priority": 65
   }
 }

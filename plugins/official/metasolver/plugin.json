@@ -1,21 +1,21 @@
 {
   "name": "metasolver",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "plugin_api_version": "2.0",
-  "description": "Exécute automatiquement un ensemble de plugins pour détecter ou décoder un texte.",
+  "description": "Exécute automatiquement un ensemble de plugins de chiffrement/déchiffrement pour détecter ou décoder un texte. Utilise des presets configurables et une découverte dynamique des plugins éligibles.",
   "author": "MysterAI Team",
   "plugin_type": "python",
   "entry_point": "main.py",
   "dependencies": [],
   "categories": ["Meta", "Automation", "Detection"],
-  "kinds": ["solver", "code"],
+  "kinds": ["solver", "meta"],
   "brute_force": false,
   "enable_scoring": true,
   "accept_accents": true,
   "heavy_cpu": false,
   "needs_network": false,
   "needs_filesystem": false,
-  "timeout_seconds": 60,
+  "timeout_seconds": 120,
   "capabilities": {
     "analyze": true,
     "decode": true,
@@ -42,21 +42,29 @@
       "default": "decode",
       "description": "Choisissez entre décoder le texte ou détecter les codes possibles."
     },
-    "plugin_scope": {
+    "preset": {
       "type": "select",
-      "label": "Portée des plugins",
+      "label": "Preset de plugins",
       "options": [
-        {"value": "selected", "label": "Plugins actifs uniquement"},
-        {"value": "all", "label": "Tous les plugins disponibles"}
+        {"value": "all", "label": "Tous les codes"},
+        {"value": "frequent", "label": "Codes fréquents"},
+        {"value": "letters_only", "label": "Codes à lettres"},
+        {"value": "digits_only", "label": "Codes à chiffres"},
+        {"value": "symbols_only", "label": "Codes à symboles"},
+        {"value": "words_only", "label": "Codes à mots"},
+        {"value": "substitution", "label": "Substitution"},
+        {"value": "transposition", "label": "Transposition"},
+        {"value": "numeral", "label": "Systèmes numériques"},
+        {"value": "no_key", "label": "Sans clé (auto)"}
       ],
-      "default": "selected",
-      "description": "Inclure uniquement les plugins actifs ou tout le catalogue."
+      "default": "all",
+      "description": "Sélectionnez un preset pour filtrer les plugins à exécuter."
     },
     "plugin_list": {
       "type": "string",
       "label": "Filtre de plugins (optionnel)",
-      "placeholder": "caesar, bacon_code",
-      "description": "Noms de plugins séparés par des virgules pour restreindre l'exécution."
+      "placeholder": "caesar, bacon_code, morse_code",
+      "description": "Noms de plugins séparés par des virgules pour restreindre l'exécution. Si renseigné, le preset est ignoré."
     },
     "enable_bruteforce": {
       "type": "checkbox",

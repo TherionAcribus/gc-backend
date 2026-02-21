@@ -277,6 +277,39 @@
         }
       }
     },
+    "metasolver": {
+      "type": "object",
+      "description": "Configuration d'éligibilité et de classement pour le méta-plugin metasolver",
+      "properties": {
+        "eligible": {
+          "type": "boolean",
+          "default": false,
+          "description": "Indique si ce plugin peut être utilisé par le metasolver"
+        },
+        "input_charset": {
+          "type": "string",
+          "enum": ["letters", "digits", "symbols", "words", "mixed"],
+          "description": "Type principal de caractères en entrée du chiffrement"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z_]+$"
+          },
+          "description": "Tags de classement pour filtrage par presets (ex: frequent, classic, substitution, transposition, numeral)"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 50,
+          "description": "Priorité d'exécution dans le metasolver (0-100, plus élevé = exécuté en premier)"
+        }
+      },
+      "required": ["eligible"],
+      "additionalProperties": false
+    },
     "text_handling": {
       "type": "object",
       "description": "Configuration optionnelle pour la normalisation des champs texte côté Plugin Executor (accents, casse, caractères supportés)",

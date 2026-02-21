@@ -68,5 +68,11 @@
       "type": "string",
       "label": "Résultat"
     }
+  },
+  "metasolver": {
+    "eligible": true,
+    "input_charset": "symbols",
+    "tags": ["substitution", "no_key"],
+    "priority": 55
   }
 }

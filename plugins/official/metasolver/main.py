@@ -4,9 +4,14 @@ Ce plugin agit comme un "meta-plugin" : il peut lancer en séquence un ensemble 
 plugins d'analyse (mode "detect") ou de décodage (mode "decode") et agréger leurs
 résultats.
 
+La sélection des plugins est **dynamique** : seuls les plugins déclarant
+``"metasolver": {"eligible": true}`` dans leur ``plugin.json`` sont considérés.
+Des **presets** (définis dans ``presets.json``) permettent de filtrer par tags ou
+par type de charset (letters, digits, symbols, words, mixed).
+
 Le comportement est configurable via les paramètres d'entrée définis dans
-``plugin.json`` afin d'adapter la portée (plugins considérés), les options de
-bruteforce ou encore la détection automatique de coordonnées.
+``plugin.json`` afin d'adapter la portée (preset), les options de bruteforce ou
+encore la détection automatique de coordonnées.
 """
 
 from __future__ import annotations
@@ -15,14 +20,6 @@ import json
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-
-# Liste temporaire de plugins à utiliser lorsque la découverte ne renvoie rien.
-# TODO: remplacer par une récupération dynamique depuis le backend (configurable).
-FALLBACK_PLUGIN_PIPELINE: Dict[str, List[str]] = {
-    "decode": ["caesar", "bacon_code", "fox_code"],
-    "detect": ["caesar", "bacon_code", "fox_code"],
-}
 
 
 def _lazy_import_wrappers():
@@ -38,8 +35,9 @@ class MetaSolverPlugin:
 
     def __init__(self) -> None:
         self.name = "metasolver"
-        self.version = "1.0.0"
+        self.version = "2.0.0"
         self._plugin_manager = None
+        self._presets: Optional[Dict[str, Any]] = None
 
     # ---------------------------------------------------------------------
     # Infrastructure (injection du plugin manager)
@@ -48,6 +46,43 @@ class MetaSolverPlugin:
         """Injection du plugin manager fournie par le wrapper Python."""
 
         self._plugin_manager = plugin_manager
+
+    # ------------------------------------------------------------------
+    # Presets
+    # ------------------------------------------------------------------
+    def _load_presets(self) -> Dict[str, Any]:
+        """Charge les presets depuis presets.json (à côté de ce fichier)."""
+
+        if self._presets is not None:
+            return self._presets
+
+        presets_path = Path(__file__).parent / "presets.json"
+        try:
+            with presets_path.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            self._presets = data.get("presets") or {}
+        except Exception:
+            self._presets = {}
+
+        return self._presets
+
+    def _get_preset_filter(self, preset_name: str) -> Dict[str, Any]:
+        """Retourne le filtre d'un preset donné (vide si preset inconnu ou 'all')."""
+
+        presets = self._load_presets()
+        preset = presets.get(preset_name)
+        if not preset:
+            return {}
+        return preset.get("filter") or {}
+
+    def get_available_presets(self) -> Dict[str, Dict[str, str]]:
+        """Retourne la liste des presets disponibles (label + description)."""
+
+        presets = self._load_presets()
+        return {
+            name: {"label": p.get("label", name), "description": p.get("description", "")}
+            for name, p in presets.items()
+        }
 
     # ------------------------------------------------------------------
     # API principale
@@ -68,7 +103,7 @@ class MetaSolverPlugin:
         if mode not in {"detect", "decode"}:
             return self._error_response(f"Mode non supporté: {mode}", start_time)
 
-        plugin_scope = (inputs.get("plugin_scope") or "selected").lower()
+        preset = (inputs.get("preset") or "all").lower()
         plugin_list_raw = inputs.get("plugin_list") or ""
         enable_bruteforce = bool(inputs.get("enable_bruteforce", True))
         detect_coordinates = bool(inputs.get("detect_coordinates", True))
@@ -82,15 +117,20 @@ class MetaSolverPlugin:
 
         explicit_plugins = self._parse_plugin_list(plugin_list_raw)
 
+        preset_filter = self._get_preset_filter(preset)
+
         candidates = self._collect_candidates(
             mode=mode,
-            plugin_scope=plugin_scope,
+            preset_filter=preset_filter,
             explicit_plugins=explicit_plugins,
             max_plugins=max_plugins_int,
         )
 
         if not candidates:
-            return self._error_response("Aucun plugin disponible pour ce mode !!", start_time)
+            return self._error_response(
+                f"Aucun plugin éligible pour le mode '{mode}' avec le preset '{preset}'",
+                start_time,
+            )
 
         execution_log: List[Dict[str, Any]] = []
         aggregated_results: List[Dict[str, Any]] = []
@@ -111,7 +151,7 @@ class MetaSolverPlugin:
             plugin_name = candidate["name"]
             try:
                 plugin_inputs = dict(request_payload)
-                plugin_inputs.update(self._build_additional_inputs(candidate["metadata"]) )
+                plugin_inputs.update(self._build_additional_inputs(candidate["metadata"]))
 
                 result = self._execute_with_fallback(plugin_name, plugin_inputs, candidate)
                 execution_log.append(
@@ -178,11 +218,13 @@ class MetaSolverPlugin:
                 "version": self.version,
                 "execution_time_ms": round((time.time() - start_time) * 1000, 2),
                 "mode": mode,
+                "preset": preset,
                 "executed_plugins": execution_log,
             },
             "inputs": {
                 "mode": mode,
-                "plugin_scope": plugin_scope,
+                "preset": preset,
+                "preset_filter": preset_filter if preset_filter else None,
                 "requested_plugins": sorted(explicit_plugins) if explicit_plugins else None,
                 "max_plugins": max_plugins_int,
                 "enable_bruteforce": enable_bruteforce,
@@ -215,80 +257,114 @@ class MetaSolverPlugin:
         items = [item.strip().lower() for item in raw.split(",")]
         return [item for item in items if item]
 
+    @staticmethod
+    def _matches_preset_filter(
+        metasolver_meta: Dict[str, Any],
+        preset_filter: Dict[str, Any],
+    ) -> bool:
+        """Vérifie si les métadonnées metasolver d'un plugin correspondent au filtre du preset.
+
+        Un filtre vide (preset "all") accepte tout plugin éligible.
+        Clés de filtre supportées :
+        - ``tags`` (list[str])          : le plugin doit posséder **au moins un** des tags listés.
+        - ``input_charset`` (list[str]) : le ``input_charset`` du plugin doit être dans la liste.
+        """
+
+        if not preset_filter:
+            return True
+
+        # Filtre par tags (OR : au moins un tag commun)
+        filter_tags = preset_filter.get("tags")
+        if filter_tags:
+            plugin_tags = set(metasolver_meta.get("tags") or [])
+            if not plugin_tags.intersection(filter_tags):
+                return False
+
+        # Filtre par input_charset
+        filter_charsets = preset_filter.get("input_charset")
+        if filter_charsets:
+            plugin_charset = metasolver_meta.get("input_charset", "")
+            if plugin_charset not in filter_charsets:
+                return False
+
+        return True
+
     def _collect_candidates(
         self,
         *,
         mode: str,
-        plugin_scope: str,
+        preset_filter: Dict[str, Any],
         explicit_plugins: List[str],
         max_plugins: Optional[int],
     ) -> List[Dict[str, Any]]:
-        """Sélectionne les plugins à exécuter en fonction des paramètres."""
+        """Sélectionne les plugins à exécuter.
 
-        include_disabled = plugin_scope == "all"
-        all_plugins = self._plugin_manager.list_plugins(enabled_only=not include_disabled) or []
+        Logique :
+        1. Lister tous les plugins activés.
+        2. Pour chaque plugin, récupérer ses métadonnées complètes.
+        3. Ne retenir que ceux qui déclarent ``metasolver.eligible = true``.
+        4. Filtrer par capabilities (analyze/decode) selon le mode.
+        5. Appliquer le filtre du preset (tags / input_charset).
+        6. Si une liste explicite est fournie, ne garder que ces plugins (en
+           conservant l'ordre utilisateur).
+        7. Trier par priorité décroissante (champ ``metasolver.priority``).
+        8. Limiter au ``max_plugins`` demandé.
+        """
 
-        fallback_names = FALLBACK_PLUGIN_PIPELINE.get(mode, [])
-        if fallback_names:
-            known_names = {entry.get("name") for entry in all_plugins}
-            for fallback_name in fallback_names:
-                if fallback_name not in known_names:
-                    all_plugins.append({"name": fallback_name, "enabled": True, "_fallback": True})
+        all_plugins = self._plugin_manager.list_plugins(enabled_only=True) or []
 
         candidates: List[Dict[str, Any]] = []
         explicit_set = set(explicit_plugins)
 
         for plugin_entry in all_plugins:
             name = plugin_entry.get("name")
-            if not name:
-                continue
-            if name == self.name:
-                continue
-            if explicit_set and name not in explicit_set:
-                continue
-            if not plugin_entry.get("enabled", True) and not include_disabled:
+            if not name or name == self.name:
                 continue
 
+            # Si liste explicite, ne garder que les plugins demandés
+            if explicit_set and name not in explicit_set:
+                continue
+
+            # Récupérer les métadonnées complètes
             info = self._plugin_manager.get_plugin_info(name) or {}
             metadata = info.get("metadata") or {}
 
-            if plugin_entry.get("_fallback"):
-                metadata = {
-                    "capabilities": {"analyze": True, "decode": True},
-                    "input_types": {},
-                    "_fallback": True,
-                }
-            capabilities = metadata.get("capabilities") or {}
+            # Vérifier l'éligibilité metasolver
+            metasolver_meta = metadata.get("metasolver") or {}
+            if not metasolver_meta.get("eligible"):
+                # Si le plugin est explicitement demandé, on l'accepte quand même
+                if not explicit_set:
+                    continue
 
+            # Vérifier les capabilities pour le mode demandé
+            capabilities = metadata.get("capabilities") or {}
             if mode == "detect" and not capabilities.get("analyze"):
                 continue
             if mode == "decode" and not capabilities.get("decode"):
                 continue
 
-            candidates.append({"name": name, "metadata": metadata})
+            # Appliquer le filtre du preset (sauf si liste explicite)
+            if not explicit_set and not self._matches_preset_filter(metasolver_meta, preset_filter):
+                continue
 
-        # Si liste explicite fournie, conserver l'ordre utilisateur
+            priority = metasolver_meta.get("priority", 50)
+            candidates.append({
+                "name": name,
+                "metadata": metadata,
+                "priority": priority,
+            })
+
+        # Tri
         if explicit_set:
+            # Conserver l'ordre utilisateur
             order = {plugin: idx for idx, plugin in enumerate(explicit_plugins)}
             candidates.sort(key=lambda item: order.get(item["name"], len(order)))
         else:
-            candidates.sort(key=lambda item: item["name"])
+            # Tri par priorité décroissante puis par nom
+            candidates.sort(key=lambda item: (-item["priority"], item["name"]))
 
-        if max_plugins is not None:
+        if max_plugins is not None and max_plugins > 0:
             candidates = candidates[:max_plugins]
-
-        if not candidates and fallback_names:
-            candidates = [
-                {
-                    "name": name,
-                    "metadata": {
-                        "capabilities": {"analyze": True, "decode": True},
-                        "input_types": {},
-                        "_fallback": True,
-                    },
-                }
-                for name in fallback_names
-            ]
 
         return candidates
 
@@ -316,15 +392,13 @@ class MetaSolverPlugin:
         if not is_unavailable:
             return manager_result or self._error_response("Aucun résultat retourné", time.time())
 
-        if not candidate.get("metadata", {}).get("_fallback"):
-            return manager_result or self._error_response("Plugin indisponible", time.time())
-
+        # Tentative de chargement direct depuis le répertoire officiel
         direct_result = self._execute_plugin_direct(plugin_name, inputs)
 
         if direct_result:
             return direct_result
 
-        return manager_result or self._error_response("Échec exécution fallback", time.time())
+        return manager_result or self._error_response("Plugin indisponible", time.time())
 
     def _execute_plugin_direct(self, plugin_name: str, inputs: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Charge et exécute directement un plugin depuis son répertoire officiel."""

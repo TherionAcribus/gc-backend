@@ -87,5 +87,11 @@
       "case": "upper",
       "map_characters": {}
     }
+  },
+  "metasolver": {
+    "eligible": true,
+    "input_charset": "mixed",
+    "tags": ["substitution", "no_key"],
+    "priority": 55
   }
 }

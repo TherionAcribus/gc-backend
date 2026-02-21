@@ -87,5 +87,11 @@
       "type": "string",
       "label": "Résultat"
     }
+  },
+  "metasolver": {
+    "eligible": true,
+    "input_charset": "digits",
+    "tags": ["substitution"],
+    "priority": 50
   }
 }

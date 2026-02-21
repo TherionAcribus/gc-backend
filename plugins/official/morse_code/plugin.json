@@ -95,5 +95,11 @@
       "case": "upper",
       "map_characters": {}
     }
+  },
+  "metasolver": {
+    "eligible": true,
+    "input_charset": "symbols",
+    "tags": ["frequent", "classic", "substitution", "no_key"],
+    "priority": 85
   }
 }

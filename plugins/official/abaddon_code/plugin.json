@@ -84,5 +84,11 @@
         "μ": "µ"
       }
     }
+  },
+  "metasolver": {
+    "eligible": true,
+    "input_charset": "symbols",
+    "tags": ["substitution", "no_key"],
+    "priority": 60
   }
 }

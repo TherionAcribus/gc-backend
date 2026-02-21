@@ -1,0 +1,73 @@
+{
+  "_description": "Presets de listes de plugins pour le metasolver. Chaque preset définit des filtres appliqués sur les métadonnées metasolver des plugins éligibles.",
+  "presets": {
+    "all": {
+      "label": "Tous les codes",
+      "description": "Tous les plugins éligibles au metasolver",
+      "filter": {}
+    },
+    "frequent": {
+      "label": "Codes fréquents",
+      "description": "Codes les plus courants en géocaching (César, Morse, Bacon, Vigenère, base, etc.)",
+      "filter": {
+        "tags": ["frequent"]
+      }
+    },
+    "letters_only": {
+      "label": "Codes à lettres",
+      "description": "Codes dont l'entrée est composée uniquement de lettres",
+      "filter": {
+        "input_charset": ["letters"]
+      }
+    },
+    "digits_only": {
+      "label": "Codes à chiffres",
+      "description": "Codes dont l'entrée est composée uniquement de chiffres",
+      "filter": {
+        "input_charset": ["digits"]
+      }
+    },
+    "symbols_only": {
+      "label": "Codes à symboles",
+      "description": "Codes dont l'entrée utilise des symboles spéciaux",
+      "filter": {
+        "input_charset": ["symbols"]
+      }
+    },
+    "words_only": {
+      "label": "Codes à mots",
+      "description": "Codes dont l'entrée utilise des mots (Houdini, Shadok, etc.)",
+      "filter": {
+        "input_charset": ["words"]
+      }
+    },
+    "substitution": {
+      "label": "Substitution",
+      "description": "Codes de substitution mono/polyalphabétique",
+      "filter": {
+        "tags": ["substitution"]
+      }
+    },
+    "transposition": {
+      "label": "Transposition",
+      "description": "Codes de transposition (Rail Fence, UBCHI, etc.)",
+      "filter": {
+        "tags": ["transposition"]
+      }
+    },
+    "numeral": {
+      "label": "Systèmes numériques",
+      "description": "Codes basés sur des conversions numériques (bases, nombres premiers, etc.)",
+      "filter": {
+        "tags": ["numeral"]
+      }
+    },
+    "no_key": {
+      "label": "Sans clé",
+      "description": "Codes ne nécessitant pas de clé (idéal pour l'exécution automatique)",
+      "filter": {
+        "tags": ["no_key"]
+      }
+    }
+  }
+}

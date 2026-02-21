@@ -74,5 +74,11 @@
       "type": "string",
       "label": "Texte transformé"
     }
+  },
+  "metasolver": {
+    "eligible": true,
+    "input_charset": "letters",
+    "tags": ["substitution"],
+    "priority": 45
   }
 }

@@ -74,5 +74,11 @@
       "case": "upper",
       "map_characters": {}
     }
+  },
+  "metasolver": {
+    "eligible": true,
+    "input_charset": "digits",
+    "tags": ["numeral", "no_key"],
+    "priority": 60
   }
 }

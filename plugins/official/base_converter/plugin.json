@@ -104,5 +104,11 @@
       "type": "string",
       "label": "Résultat de la conversion"
     }
+  },
+  "metasolver": {
+    "eligible": true,
+    "input_charset": "mixed",
+    "tags": ["frequent", "numeral", "no_key"],
+    "priority": 75
   }
 }

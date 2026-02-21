@@ -72,5 +72,11 @@
       "type": "string",
       "label": "Texte transformé"
     }
+  },
+  "metasolver": {
+    "eligible": true,
+    "input_charset": "letters",
+    "tags": ["frequent", "transposition", "no_key"],
+    "priority": 65
   }
 }

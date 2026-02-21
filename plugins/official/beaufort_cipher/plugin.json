@@ -102,5 +102,11 @@
       "case": "upper",
       "map_characters": {}
     }
+  },
+  "metasolver": {
+    "eligible": true,
+    "input_charset": "letters",
+    "tags": ["classic", "substitution"],
+    "priority": 50
   }
 }

@@ -561,6 +561,104 @@ def list_plugins():
         }), 500
 
 
+@bp.route('/metasolver/eligible', methods=['GET'])
+def metasolver_eligible_plugins():
+    """
+    Liste les plugins éligibles au metasolver, optionnellement filtrés par preset.
+
+    Query Parameters:
+        preset (str, optional): Nom du preset à appliquer (défaut: 'all')
+
+    Returns:
+        JSON: {
+            "preset": nom du preset,
+            "preset_filter": filtre appliqué,
+            "plugins": [ {name, description, input_charset, tags, priority} ],
+            "total": nombre total
+        }
+
+    Example:
+        GET /api/plugins/metasolver/eligible
+        GET /api/plugins/metasolver/eligible?preset=frequent
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    try:
+        manager = get_plugin_manager()
+        preset_name = (request.args.get('preset') or 'all').lower()
+
+        # Charger les presets
+        presets_path = _Path(manager.plugins_dir) / 'official' / 'metasolver' / 'presets.json'
+        presets = {}
+        try:
+            with presets_path.open('r', encoding='utf-8') as f:
+                presets = _json.load(f).get('presets', {})
+        except Exception:
+            pass
+
+        preset_info = presets.get(preset_name, {})
+        preset_filter = preset_info.get('filter', {})
+
+        # Lister tous les plugins activés avec métadonnées
+        from ..plugins.models import Plugin as PluginModel
+        all_plugins = PluginModel.query.filter_by(enabled=True).all()
+
+        eligible = []
+        for plugin in all_plugins:
+            try:
+                metadata = _json.loads(plugin.metadata_json) if plugin.metadata_json else {}
+            except Exception:
+                continue
+
+            ms = metadata.get('metasolver') or {}
+            if not ms.get('eligible'):
+                continue
+
+            # Appliquer le filtre du preset
+            if preset_filter:
+                filter_tags = preset_filter.get('tags')
+                if filter_tags:
+                    plugin_tags = set(ms.get('tags') or [])
+                    if not plugin_tags.intersection(filter_tags):
+                        continue
+
+                filter_charsets = preset_filter.get('input_charset')
+                if filter_charsets:
+                    if ms.get('input_charset', '') not in filter_charsets:
+                        continue
+
+            eligible.append({
+                'name': plugin.name,
+                'description': plugin.description,
+                'input_charset': ms.get('input_charset'),
+                'tags': ms.get('tags', []),
+                'priority': ms.get('priority', 50),
+            })
+
+        # Trier par priorité décroissante
+        eligible.sort(key=lambda p: (-p['priority'], p['name']))
+
+        return jsonify({
+            'preset': preset_name,
+            'preset_label': preset_info.get('label', preset_name),
+            'preset_filter': preset_filter or None,
+            'plugins': eligible,
+            'total': len(eligible),
+            'available_presets': {
+                name: {'label': p.get('label', name), 'description': p.get('description', '')}
+                for name, p in presets.items()
+            }
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Erreur listing metasolver eligible: {e}", exc_info=True)
+        return jsonify({
+            "error": "Erreur listing metasolver eligible",
+            "message": str(e)
+        }), 500
+
+
 @bp.route('/<plugin_name>', methods=['GET'])
 def get_plugin_info(plugin_name: str):
     """

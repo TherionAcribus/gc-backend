@@ -59,7 +59,13 @@
   "output_types": {
     "text_output": {
       "type": "string",
-      "label": "Texte transformé"
+      "label": "Résultat"
     }
+  },
+  "metasolver": {
+    "eligible": true,
+    "input_charset": "letters",
+    "tags": ["frequent", "numeral", "no_key"],
+    "priority": 70
   }
 }

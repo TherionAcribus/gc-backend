@@ -45,5 +45,11 @@
       "type": "string",
       "label": "Résultat"
     }
+  },
+  "metasolver": {
+    "eligible": true,
+    "input_charset": "words",
+    "tags": ["numeral", "no_key"],
+    "priority": 50
   }
 }
