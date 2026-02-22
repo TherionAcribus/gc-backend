@@ -164,10 +164,11 @@ class MetaSolverPlugin:
                 )
 
                 if result.get("status") != "success" and result.get("status") != "ok":
+                    reason = self._extract_summary_text(result.get("summary")) or result.get("error", {}).get("message")
                     failed_plugins.append(
                         {
                             "plugin": plugin_name,
-                            "reason": result.get("summary") or result.get("error", {}).get("message"),
+                            "reason": reason,
                         }
                     )
                     continue
@@ -362,7 +363,7 @@ class MetaSolverPlugin:
                 })
 
                 if result.get("status") != "success" and result.get("status") != "ok":
-                    reason = result.get("summary") or result.get("error", {}).get("message")
+                    reason = self._extract_summary_text(result.get("summary")) or result.get("error", {}).get("message")
                     failed_plugins.append({"plugin": plugin_name, "reason": reason})
 
                     yield {
@@ -624,7 +625,7 @@ class MetaSolverPlugin:
 
         manager_result = self._plugin_manager.execute_plugin(plugin_name, inputs)
 
-        summary_text = (manager_result or {}).get("summary") or ""
+        summary_text = self._extract_summary_text((manager_result or {}).get("summary"))
         is_unavailable = (
             not manager_result
             or manager_result.get("status") == "error"
@@ -723,6 +724,15 @@ class MetaSolverPlugin:
         if summary:
             combined["summary"] = summary
         return combined
+
+    @staticmethod
+    def _extract_summary_text(summary: Any) -> str:
+        """Extrait un texte lisible depuis un champ summary (str ou dict)."""
+        if isinstance(summary, dict):
+            return str(summary.get("message", ""))
+        if summary is None:
+            return ""
+        return str(summary)
 
     def _error_response(self, message: str, start_time: float) -> Dict[str, Any]:
         return {
