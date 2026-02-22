@@ -11,12 +11,14 @@ class MultitapCodePlugin:
         self.version = "1.0.0"
 
         try:
-            from gc_backend.plugins.scoring import score_text
+            from gc_backend.plugins.scoring import score_text, score_text_fast
 
             self._score_text = score_text
+            self._score_text_fast = score_text_fast
             self._scoring_available = True
         except Exception:
             self._score_text = None
+            self._score_text_fast = None
             self._scoring_available = False
 
         self._encode_table: Dict[str, str] = {
@@ -94,7 +96,6 @@ class MultitapCodePlugin:
                     unknown_chars = solution.get("unknown_chars", 0)
 
                     confidence = self._calculate_confidence(solution, enable_scoring, context)
-                    scoring_result = self._get_text_score(decoded_text, context) if enable_scoring else None
 
                     result_entry = {
                         "id": f"result_{idx}",
@@ -114,9 +115,6 @@ class MultitapCodePlugin:
                     segmentation = solution.get("segmentation")
                     if segmentation:
                         result_entry["metadata"]["segmentation"] = segmentation
-
-                    if scoring_result:
-                        result_entry["scoring"] = scoring_result
 
                     standardized_response["results"].append(result_entry)
 
@@ -288,9 +286,8 @@ class MultitapCodePlugin:
         decoded_text = "".join(self._decode_table.get(code, "?") for code in segmentation)
         score = 0.0
 
-        scoring = self._get_text_score(decoded_text)
-        if scoring is not None:
-            score += float(scoring.get("score", 0.0)) * 5.0
+        fast_score = self._get_text_score_fast(decoded_text)
+        score += fast_score * 5.0
 
         if self._looks_like_french_text(decoded_text):
             score += 3.0
@@ -321,9 +318,8 @@ class MultitapCodePlugin:
             decoded_text = "".join(self._decode_table.get(code, "?") for code in segmentation)
             score = 0.0
 
-            scoring = self._get_text_score(decoded_text)
-            if scoring is not None:
-                score += float(scoring.get("score", 0.0)) * 10.0
+            fast_score = self._get_text_score_fast(decoded_text)
+            score += fast_score * 10.0
 
             if self._looks_like_french_text(decoded_text):
                 score += 50.0
@@ -387,6 +383,14 @@ class MultitapCodePlugin:
             return self._score_text(text, context=context or {})
         except Exception:
             return None
+
+    def _get_text_score_fast(self, text: str) -> float:
+        if not self._scoring_available or not self._score_text_fast:
+            return 0.0
+        try:
+            return self._score_text_fast(text)
+        except Exception:
+            return 0.0
 
     def _looks_like_french_text(self, text: str) -> bool:
         if not text or len(text) < 2:
@@ -550,9 +554,9 @@ class MultitapCodePlugin:
         unknown_chars = solution.get("unknown_chars", 0)
 
         if enable_scoring and self._scoring_available:
-            scoring_result = self._get_text_score(decoded_text, context)
-            if scoring_result and "score" in scoring_result:
-                base_confidence = float(scoring_result["score"])
+            fast_score = self._get_text_score_fast(decoded_text)
+            if fast_score > 0:
+                base_confidence = fast_score
                 if "none_variant" in separator:
                     base_confidence *= 0.95
                 elif separator == "space":

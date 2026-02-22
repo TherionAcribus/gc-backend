@@ -11,6 +11,14 @@ de N positions dans l'alphabet. Il supporte :
 import time
 from typing import Dict, Any, List
 
+try:
+    from gc_backend.plugins.scoring import score_text_fast
+
+    _SCORING_AVAILABLE = True
+except Exception:  # pragma: no cover - optional dependency
+    score_text_fast = None
+    _SCORING_AVAILABLE = False
+
 
 class CaesarPlugin:
     """
@@ -153,6 +161,15 @@ class CaesarPlugin:
         
         return ''.join(result)
     
+    @staticmethod
+    def _get_score_fast(text: str) -> float:
+        if not _SCORING_AVAILABLE or not score_text_fast:
+            return 0.5
+        try:
+            return score_text_fast(text)
+        except Exception:
+            return 0.5
+
     def _bruteforce_decode(self, text: str) -> List[Dict]:
         """
         Teste tous les décalages possibles (1 à 25).
@@ -167,11 +184,12 @@ class CaesarPlugin:
         
         for shift in range(1, 26):
             decoded_text = self._caesar_shift(text, -shift)
+            confidence = self._get_score_fast(decoded_text)
             
             results.append({
                 "id": f"result_{shift}",
                 "text_output": decoded_text,
-                "confidence": 0.5,  # Sera réévalué par le scoring service
+                "confidence": confidence,
                 "parameters": {
                     "mode": "decode",
                     "shift": shift
@@ -181,6 +199,8 @@ class CaesarPlugin:
                     "shift_tested": shift
                 }
             })
+        
+        results.sort(key=lambda r: r["confidence"], reverse=True)
         
         return results
     

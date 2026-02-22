@@ -5,11 +5,12 @@ import time
 from typing import Any, Dict, List
 
 try:
-    from gc_backend.plugins.scoring import score_text
+    from gc_backend.plugins.scoring import score_text, score_text_fast
 
     _SCORING_AVAILABLE = True
 except Exception:  # pragma: no cover - optional dependency
     score_text = None
+    score_text_fast = None
     _SCORING_AVAILABLE = False
 
 
@@ -97,6 +98,14 @@ class WolseleyCipherPlugin:
             return score_text(cleaned, context=context)
         except Exception:
             return None
+
+    def _get_score_fast(self, text: str) -> float:
+        if not _SCORING_AVAILABLE or not score_text_fast:
+            return 0.3
+        try:
+            return score_text_fast(self._clean_text(text))
+        except Exception:
+            return 0.3
 
     # ------------------------------------------------------------------
     # Bruteforce
@@ -221,11 +230,7 @@ class WolseleyCipherPlugin:
             elif do_bruteforce:
                 solutions = self.bruteforce(text, removed_letter, candidate_keys=candidate_keys)
                 for idx, sol in enumerate(solutions[:max_results], 1):
-                    confidence = 0.3
-                    scoring_result = self._get_score(sol["decoded_text"], context) if enable_scoring else None
-                    if scoring_result and "score" in scoring_result:
-                        confidence = float(scoring_result["score"])
-
+                    confidence = self._get_score_fast(sol["decoded_text"]) if enable_scoring else 0.3
                     result = {
                         "id": f"result_{idx}",
                         "text_output": sol["decoded_text"],
@@ -240,8 +245,6 @@ class WolseleyCipherPlugin:
                             "alphabet_used": self._generate_alphabet(sol["key"], removed_letter),
                         },
                     }
-                    if scoring_result:
-                        result["scoring"] = scoring_result
                     response["results"].append(result)
 
                 response["results"].sort(key=lambda r: r.get("confidence", 0.0), reverse=True)

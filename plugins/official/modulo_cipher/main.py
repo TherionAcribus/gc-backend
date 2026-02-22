@@ -6,6 +6,14 @@ import string
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+try:
+    from gc_backend.plugins.scoring import score_text_fast
+
+    _SCORING_AVAILABLE = True
+except Exception:  # pragma: no cover - optional dependency
+    score_text_fast = None
+    _SCORING_AVAILABLE = False
+
 
 class ModuloCipherPlugin:
     def __init__(self) -> None:
@@ -132,6 +140,15 @@ class ModuloCipherPlugin:
 
         return decoded_text, None
 
+    @staticmethod
+    def _get_score_fast(text: str) -> float:
+        if not _SCORING_AVAILABLE or not score_text_fast:
+            return 0.0
+        try:
+            return score_text_fast(text)
+        except Exception:
+            return 0.0
+
     def _bruteforce_decode(self, text: str, alphabet_mapping: str) -> List[Dict[str, Any]]:
         results: List[Dict[str, Any]] = []
         idx = 1
@@ -142,6 +159,9 @@ class ModuloCipherPlugin:
                 continue
 
             confidence = self._calculate_confidence(modulo=modulo, decoded_text=decoded)
+            fast = self._get_score_fast(decoded)
+            if fast > 0:
+                confidence = max(confidence, fast)
             results.append(
                 {
                     "id": f"result_{idx}",

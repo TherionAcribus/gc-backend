@@ -725,9 +725,16 @@ def metasolver_execute_stream():
         try:
             for event in raw_instance.execute_streaming(inputs):
                 event_type = event.get('event', 'message')
-                event_data = _json.dumps(event.get('data', {}), ensure_ascii=False)
+                try:
+                    event_data = _json.dumps(event.get('data', {}), ensure_ascii=False)
+                except Exception as serial_exc:
+                    logger.error(f"[streaming] JSON serialization error on event '{event_type}': {serial_exc}", exc_info=True)
+                    event_data = _json.dumps({"error": f"Serialization error: {serial_exc}"}, ensure_ascii=False)
+                logger.debug(f"[streaming] Yielding event: {event_type}")
                 yield f"event: {event_type}\ndata: {event_data}\n\n"
+            logger.info("[streaming] execute_streaming generator exhausted — all events sent")
         except Exception as exc:
+            logger.error(f"[streaming] Unhandled exception in generate(): {exc}", exc_info=True)
             error_data = _json.dumps({
                 "error": str(exc),
                 "type": type(exc).__name__
@@ -914,35 +921,36 @@ def execute_plugin(plugin_name: str):
             mode_str = str(mode).lower() if isinstance(mode, str) else None
 
             if enable_scoring and isinstance(result, dict) and isinstance(result.get('results'), list):
-                from gc_backend.plugins.scoring import score_text
+                items = [item for item in (result.get('results') or []) if isinstance(item, dict)]
 
-                for item in result.get('results') or []:
-                    if not isinstance(item, dict):
-                        continue
-
+                # Preserve original plugin confidence before overwriting
+                for item in items:
                     item_metadata = item.get('metadata')
                     if not isinstance(item_metadata, dict):
                         item_metadata = {}
                         item['metadata'] = item_metadata
-
                     plugin_confidence = item.get('confidence')
                     if plugin_confidence is not None and 'plugin_confidence' not in item_metadata:
                         item_metadata['plugin_confidence'] = plugin_confidence
 
-                    if mode_str == 'detect':
+                if mode_str == 'detect':
+                    for item in items:
                         item['confidence'] = 0.0
-                        continue
+                elif mode_str == 'encode':
+                    pass  # Encode results have deterministic confidence, skip scoring
+                else:
+                    # Use tiered scoring: fast pre-filter then full score on survivors
+                    from gc_backend.plugins.scoring import score_and_rank_results
 
-                    text_output = item.get('text_output')
-                    if not isinstance(text_output, str) or not text_output.strip():
-                        continue
-
-                    scored = score_text(text_output, context={})
-                    item['confidence'] = float(scored.get('score') or 0.0)
-
-                    scoring_meta = scored.get('metadata')
-                    if isinstance(scoring_meta, dict) and isinstance(scoring_meta.get('scoring'), dict):
-                        item_metadata['scoring'] = scoring_meta['scoring']
+                    max_results = int(inputs.get('max_results', 25) or 25)
+                    ranked = score_and_rank_results(
+                        items,
+                        top_k=max(max_results, 25),
+                        min_score=0.03,
+                        fast_reject_threshold=0.01,
+                        context={},
+                    )
+                    result['results'] = ranked
         except Exception as e:
             logger.warning(f"Scoring integration error for {plugin_name}: {e}")
          

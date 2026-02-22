@@ -6,11 +6,12 @@ import time
 from typing import Any, Dict, List
 
 try:
-    from gc_backend.plugins.scoring import score_text
+    from gc_backend.plugins.scoring import score_text, score_text_fast
 
     _SCORING_AVAILABLE = True
 except Exception:  # pragma: no cover - optional dependency
     score_text = None
+    score_text_fast = None
     _SCORING_AVAILABLE = False
 
 
@@ -91,6 +92,15 @@ class VigenereCipherPlugin:
             return score_text(text, context=context)
         except Exception:
             return None
+
+    @staticmethod
+    def _get_score_fast(text: str) -> float:
+        if not _SCORING_AVAILABLE or not score_text_fast:
+            return 0.3
+        try:
+            return score_text_fast(text)
+        except Exception:
+            return 0.3
 
     # ------------------------------------------------------------------
     # Execute
@@ -173,10 +183,7 @@ class VigenereCipherPlugin:
 
                 for idx, candidate_key in enumerate(keys[:max_results], 1):
                     decoded = self.decode(text, candidate_key)
-                    confidence = 0.3
-                    scoring_result = self._get_score(decoded, context) if enable_scoring else None
-                    if scoring_result and "score" in scoring_result:
-                        confidence = float(scoring_result["score"])
+                    confidence = self._get_score_fast(decoded) if enable_scoring else 0.3
                     result = {
                         "id": f"result_{idx}",
                         "text_output": decoded,
@@ -184,8 +191,6 @@ class VigenereCipherPlugin:
                         "parameters": {"mode": "decode", "key": candidate_key, "bruteforce": True},
                         "metadata": {"processed_chars": len(text)},
                     }
-                    if scoring_result:
-                        result["scoring"] = scoring_result
                     response["results"].append(result)
 
                 response["results"].sort(key=lambda r: r.get("confidence", 0.0), reverse=True)

@@ -196,16 +196,14 @@ class TestScoringIntegrationExecute:
         item = data['results'][0]
         assert item['text_output'] == 'KHOOR'
 
+        # Encode mode now skips scoring — confidence is preserved as-is
         assert 'metadata' in item
         assert 'plugin_confidence' in item['metadata']
         assert item['metadata']['plugin_confidence'] == 1.0
 
         assert 'confidence' in item
         assert isinstance(item['confidence'], (int, float))
-        assert item['confidence'] != 1.0
-
-        assert 'scoring' in item['metadata']
-        assert 'score' in item['metadata']['scoring']
+        assert item['confidence'] == 1.0  # encode results keep their original confidence
 
     def test_execute_detect_mode_neutralizes_confidence(self, client, caesar_plugin):
         plugins_dir = Path(__file__).parent.parent / 'plugins'

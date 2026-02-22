@@ -18,8 +18,19 @@ from __future__ import annotations
 
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+try:
+    from gc_backend.plugins.scoring import score_and_rank_results as _score_and_rank
+    from gc_backend.plugins.scoring.scorer import score_text_fast as _score_fast
+
+    _BATCH_SCORING_AVAILABLE = True
+except Exception:  # pragma: no cover
+    _score_and_rank = None
+    _score_fast = None
+    _BATCH_SCORING_AVAILABLE = False
 
 
 def _lazy_import_wrappers():
@@ -147,61 +158,93 @@ class MetaSolverPlugin:
             "enable_bruteforce": enable_bruteforce,
         }
 
-        for candidate in candidates:
-            plugin_name = candidate["name"]
+        def _run_one(candidate: Dict[str, Any]) -> Dict[str, Any]:
+            """Execute a single candidate plugin (thread-safe)."""
+            pname = candidate["name"]
+            plugin_inputs = dict(request_payload)
+            plugin_inputs.update(self._build_additional_inputs(candidate["metadata"]))
+            t0 = time.time()
             try:
-                plugin_inputs = dict(request_payload)
-                plugin_inputs.update(self._build_additional_inputs(candidate["metadata"]))
+                result = self._execute_with_fallback(pname, plugin_inputs, candidate)
+                elapsed = round((time.time() - t0) * 1000, 2)
+                return {"name": pname, "result": result, "elapsed_ms": elapsed, "error": None}
+            except Exception as exc:
+                elapsed = round((time.time() - t0) * 1000, 2)
+                return {"name": pname, "result": None, "elapsed_ms": elapsed, "error": str(exc)}
 
-                result = self._execute_with_fallback(plugin_name, plugin_inputs, candidate)
-                execution_log.append(
+        # Execute plugins in parallel (max 6 workers to avoid overloading)
+        max_workers = min(6, len(candidates))
+        futures_results: List[Dict[str, Any]] = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_run_one, c): c for c in candidates}
+            for future in as_completed(futures):
+                futures_results.append(future.result())
+
+        # Re-order by original candidate priority order
+        candidate_order = {c["name"]: i for i, c in enumerate(candidates)}
+        futures_results.sort(key=lambda r: candidate_order.get(r["name"], 999))
+
+        for entry in futures_results:
+            plugin_name = entry["name"]
+            result = entry["result"]
+            error = entry["error"]
+
+            if error or not result:
+                failed_plugins.append({"plugin": plugin_name, "reason": error or "No result"})
+                execution_log.append({"plugin": plugin_name, "status": "error", "error": error})
+                continue
+
+            execution_log.append(
+                {
+                    "plugin": plugin_name,
+                    "status": result.get("status"),
+                    "execution_time_ms": entry["elapsed_ms"],
+                }
+            )
+
+            if result.get("status") != "success" and result.get("status") != "ok":
+                reason = self._extract_summary_text(result.get("summary")) or result.get("error", {}).get("message")
+                failed_plugins.append(
                     {
                         "plugin": plugin_name,
-                        "status": result.get("status"),
-                        "execution_time_ms": result.get("plugin_info", {}).get("execution_time_ms")
-                        or result.get("plugin_info", {}).get("execution_time"),
+                        "reason": reason,
                     }
                 )
+                continue
 
-                if result.get("status") != "success" and result.get("status") != "ok":
-                    reason = self._extract_summary_text(result.get("summary")) or result.get("error", {}).get("message")
-                    failed_plugins.append(
-                        {
-                            "plugin": plugin_name,
-                            "reason": reason,
-                        }
-                    )
-                    continue
+            results_block = result.get("results") or []
+            combined_results[plugin_name] = self._build_combined_entry(result)
+            combined_results[plugin_name]["plugin"] = plugin_name
 
-                results_block = result.get("results") or []
-                combined_results[plugin_name] = self._build_combined_entry(result)
-                combined_results[plugin_name]["plugin"] = plugin_name
+            if not primary_coordinates:
+                primary_coordinates = (
+                    result.get("primary_coordinates")
+                    or combined_results[plugin_name].get("coordinates")
+                )
 
-                if not primary_coordinates:
-                    primary_coordinates = (
-                        result.get("primary_coordinates")
-                        or combined_results[plugin_name].get("coordinates")
-                    )
-
-                for idx, item in enumerate(results_block):
-                    enriched = dict(item)
-                    parameters = dict(enriched.get("parameters") or {})
-                    parameters.setdefault("plugin", plugin_name)
-                    parameters.setdefault("mode", mode)
-                    enriched["parameters"] = parameters
-                    original_id = enriched.get("id") or f"result_{idx+1}"
-                    unique_id = f"{plugin_name}::{original_id}"
-                    enriched["id"] = unique_id
-                    enriched.setdefault("original_id", original_id)
-                    enriched.setdefault("display_id", f"{plugin_name}_{idx+1}")
-                    enriched.setdefault("display_label", f"Résultat {idx+1} · {plugin_name}")
-                    enriched.setdefault("plugin", plugin_name)
-                    enriched.setdefault("source_plugin", plugin_name)
-                    aggregated_results.append(enriched)
-
-            except Exception as exc:  # pragma: no cover - robust contre plugins tiers
-                failed_plugins.append({"plugin": plugin_name, "reason": str(exc)})
-                execution_log.append({"plugin": plugin_name, "status": "error", "error": str(exc)})
+            for idx, item in enumerate(results_block):
+                enriched = dict(item)
+                parameters = dict(enriched.get("parameters") or {})
+                parameters.setdefault("plugin", plugin_name)
+                parameters.setdefault("mode", mode)
+                enriched["parameters"] = parameters
+                original_id = enriched.get("id") or f"result_{idx+1}"
+                unique_id = f"{plugin_name}::{original_id}"
+                enriched["id"] = unique_id
+                enriched.setdefault("original_id", original_id)
+                enriched.setdefault("display_id", f"{plugin_name}_{idx+1}")
+                enriched.setdefault("display_label", f"Résultat {idx+1} · {plugin_name}")
+                enriched.setdefault("plugin", plugin_name)
+                enriched.setdefault("source_plugin", plugin_name)
+                # Override plugin confidence with text quality score
+                enriched["plugin_confidence"] = enriched.get("confidence", 0)
+                text_output = enriched.get("text_output", "")
+                if _score_fast is not None and isinstance(text_output, str) and text_output.strip():
+                    enriched["confidence"] = _score_fast(text_output)
+                else:
+                    # No text output → score 0
+                    enriched["confidence"] = 0.0
+                aggregated_results.append(enriched)
 
         aggregated_results.sort(key=lambda item: float(item.get("confidence", 0)), reverse=True)
 
@@ -212,12 +255,17 @@ class MetaSolverPlugin:
             else "Aucun plugin n'a produit de résultat exploitable"
         )
 
+        total_ms = round((time.time() - start_time) * 1000, 2)
+        plugin_times = [e.get("execution_time_ms", 0) for e in execution_log if e.get("status") in ("success", "ok")]
+        slowest_plugin = max(plugin_times) if plugin_times else 0
+        avg_plugin_time = round(sum(plugin_times) / len(plugin_times), 2) if plugin_times else 0
+
         response: Dict[str, Any] = {
             "status": status,
             "plugin_info": {
                 "name": self.name,
                 "version": self.version,
-                "execution_time_ms": round((time.time() - start_time) * 1000, 2),
+                "execution_time_ms": total_ms,
                 "mode": mode,
                 "preset": preset,
                 "executed_plugins": execution_log,
@@ -240,7 +288,17 @@ class MetaSolverPlugin:
                 "message": summary_message,
                 "total_results": len(aggregated_results),
                 "plugins_considered": len(candidates),
+                "plugins_succeeded": len(candidates) - len(failed_plugins),
                 "plugins_failed": len(failed_plugins),
+            },
+            "diagnostics": {
+                "total_execution_ms": total_ms,
+                "parallel_workers": max_workers,
+                "slowest_plugin_ms": slowest_plugin,
+                "avg_plugin_ms": avg_plugin_time,
+                "sum_plugin_ms": round(sum(plugin_times), 2),
+                "parallelism_speedup": round(sum(plugin_times) / total_ms, 2) if total_ms > 0 else 1.0,
+                "total_raw_results": len(aggregated_results),
             },
         }
 
@@ -336,36 +394,68 @@ class MetaSolverPlugin:
             "enable_bruteforce": enable_bruteforce,
         }
 
-        for idx_candidate, candidate in enumerate(candidates):
-            plugin_name = candidate["name"]
+        # Build candidate index for SSE event ordering
+        candidate_index = {c["name"]: i for i, c in enumerate(candidates)}
 
-            # Événement plugin_start
+        def _run_streaming(candidate: Dict[str, Any]) -> Dict[str, Any]:
+            """Execute a single plugin (thread-safe)."""
+            pname = candidate["name"]
+            plugin_inputs = dict(request_payload)
+            plugin_inputs.update(self._build_additional_inputs(candidate["metadata"]))
+            t0 = time.time()
+            try:
+                result = self._execute_with_fallback(pname, plugin_inputs, candidate)
+                elapsed = round((time.time() - t0) * 1000, 2)
+                return {"name": pname, "result": result, "elapsed_ms": elapsed, "error": None}
+            except Exception as exc:
+                elapsed = round((time.time() - t0) * 1000, 2)
+                return {"name": pname, "result": None, "elapsed_ms": elapsed, "error": str(exc)}
+
+        # Emit plugin_start for all candidates (they all start immediately)
+        for idx_candidate, candidate in enumerate(candidates):
             yield {
                 "event": "plugin_start",
                 "data": {
-                    "plugin": plugin_name,
+                    "plugin": candidate["name"],
                     "index": idx_candidate,
                     "total": len(candidates),
                 },
             }
 
-            plugin_start = time.time()
-            try:
-                plugin_inputs = dict(request_payload)
-                plugin_inputs.update(self._build_additional_inputs(candidate["metadata"]))
+        # Execute all plugins in parallel and yield events as they complete
+        max_workers = min(6, len(candidates))
+        completed_count = 0
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_run_streaming, c): c for c in candidates}
+            for future in as_completed(futures):
+                entry = future.result()
+                plugin_name = entry["name"]
+                result = entry["result"]
+                error = entry["error"]
+                exec_time_ms = entry["elapsed_ms"]
+                idx_candidate = candidate_index.get(plugin_name, 0)
 
-                result = self._execute_with_fallback(plugin_name, plugin_inputs, candidate)
-                exec_time_ms = round((time.time() - plugin_start) * 1000, 2)
-                execution_log.append({
-                    "plugin": plugin_name,
-                    "status": result.get("status"),
-                    "execution_time_ms": exec_time_ms,
-                })
-
-                if result.get("status") != "success" and result.get("status") != "ok":
+                if error or not result:
+                    failed_plugins.append({"plugin": plugin_name, "reason": error or "No result"})
+                    execution_log.append({"plugin": plugin_name, "status": "error", "error": error})
+                    yield {
+                        "event": "plugin_error",
+                        "data": {
+                            "plugin": plugin_name,
+                            "index": idx_candidate,
+                            "total": len(candidates),
+                            "reason": error or "No result",
+                            "execution_time_ms": exec_time_ms,
+                        },
+                    }
+                elif result.get("status") != "success" and result.get("status") != "ok":
                     reason = self._extract_summary_text(result.get("summary")) or result.get("error", {}).get("message")
                     failed_plugins.append({"plugin": plugin_name, "reason": reason})
-
+                    execution_log.append({
+                        "plugin": plugin_name,
+                        "status": result.get("status"),
+                        "execution_time_ms": exec_time_ms,
+                    })
                     yield {
                         "event": "plugin_error",
                         "data": {
@@ -377,6 +467,11 @@ class MetaSolverPlugin:
                         },
                     }
                 else:
+                    execution_log.append({
+                        "plugin": plugin_name,
+                        "status": result.get("status"),
+                        "execution_time_ms": exec_time_ms,
+                    })
                     results_block = result.get("results") or []
                     combined_results[plugin_name] = self._build_combined_entry(result)
                     combined_results[plugin_name]["plugin"] = plugin_name
@@ -402,6 +497,14 @@ class MetaSolverPlugin:
                         enriched.setdefault("display_label", f"Résultat {idx+1} · {plugin_name}")
                         enriched.setdefault("plugin", plugin_name)
                         enriched.setdefault("source_plugin", plugin_name)
+                        # Override plugin confidence with text quality score
+                        enriched["plugin_confidence"] = enriched.get("confidence", 0)
+                        text_output = enriched.get("text_output", "")
+                        if _score_fast is not None and isinstance(text_output, str) and text_output.strip():
+                            enriched["confidence"] = _score_fast(text_output)
+                        else:
+                            # No text output → score 0
+                            enriched["confidence"] = 0.0
                         aggregated_results.append(enriched)
                         plugin_aggregated.append(enriched)
 
@@ -418,37 +521,20 @@ class MetaSolverPlugin:
                         },
                     }
 
-            except Exception as exc:
-                exec_time_ms = round((time.time() - plugin_start) * 1000, 2)
-                failed_plugins.append({"plugin": plugin_name, "reason": str(exc)})
-                execution_log.append({"plugin": plugin_name, "status": "error", "error": str(exc)})
-
+                # Événement progress
+                completed_count += 1
                 yield {
-                    "event": "plugin_error",
+                    "event": "progress",
                     "data": {
-                        "plugin": plugin_name,
-                        "index": idx_candidate,
+                        "completed": completed_count,
                         "total": len(candidates),
-                        "reason": str(exc),
-                        "execution_time_ms": exec_time_ms,
+                        "percentage": round(completed_count / len(candidates) * 100, 1),
+                        "results_so_far": len(aggregated_results),
+                        "failures_so_far": len(failed_plugins),
+                        "elapsed_ms": round((time.time() - start_time) * 1000, 2),
                     },
                 }
 
-            # Événement progress
-            completed_count = idx_candidate + 1
-            yield {
-                "event": "progress",
-                "data": {
-                    "completed": completed_count,
-                    "total": len(candidates),
-                    "percentage": round(completed_count / len(candidates) * 100, 1),
-                    "results_so_far": len(aggregated_results),
-                    "failures_so_far": len(failed_plugins),
-                    "elapsed_ms": round((time.time() - start_time) * 1000, 2),
-                },
-            }
-
-        # Tri final
         aggregated_results.sort(key=lambda item: float(item.get("confidence", 0)), reverse=True)
 
         status = "success" if aggregated_results else "partial_success"
@@ -458,12 +544,17 @@ class MetaSolverPlugin:
             else "Aucun plugin n'a produit de résultat exploitable"
         )
 
+        total_ms = round((time.time() - start_time) * 1000, 2)
+        plugin_times_s = [e.get("execution_time_ms", 0) for e in execution_log if e.get("status") in ("success", "ok")]
+        slowest_s = max(plugin_times_s) if plugin_times_s else 0
+        avg_s = round(sum(plugin_times_s) / len(plugin_times_s), 2) if plugin_times_s else 0
+
         response: Dict[str, Any] = {
             "status": status,
             "plugin_info": {
                 "name": self.name,
                 "version": self.version,
-                "execution_time_ms": round((time.time() - start_time) * 1000, 2),
+                "execution_time_ms": total_ms,
                 "mode": mode,
                 "preset": preset,
                 "executed_plugins": execution_log,
@@ -486,7 +577,17 @@ class MetaSolverPlugin:
                 "message": summary_message,
                 "total_results": len(aggregated_results),
                 "plugins_considered": len(candidates),
+                "plugins_succeeded": len(candidates) - len(failed_plugins),
                 "plugins_failed": len(failed_plugins),
+            },
+            "diagnostics": {
+                "total_execution_ms": total_ms,
+                "parallel_workers": max_workers,
+                "slowest_plugin_ms": slowest_s,
+                "avg_plugin_ms": avg_s,
+                "sum_plugin_ms": round(sum(plugin_times_s), 2),
+                "parallelism_speedup": round(sum(plugin_times_s) / total_ms, 2) if total_ms > 0 else 1.0,
+                "total_raw_results": len(aggregated_results),
             },
         }
 

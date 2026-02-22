@@ -6,11 +6,12 @@ from itertools import product
 from typing import Any, Dict, List
 
 try:
-    from gc_backend.plugins.scoring import score_text
+    from gc_backend.plugins.scoring import score_text, score_text_fast
 
     _SCORING_AVAILABLE = True
 except Exception:  # pragma: no cover - optional dependency
     score_text = None
+    score_text_fast = None
     _SCORING_AVAILABLE = False
 
 
@@ -246,6 +247,15 @@ class T9CodePlugin:
         except Exception:
             return None
 
+    @staticmethod
+    def _get_score_fast(text: str) -> float:
+        if not _SCORING_AVAILABLE or not score_text_fast:
+            return 0.3
+        try:
+            return score_text_fast(text)
+        except Exception:
+            return 0.3
+
     # ------------------------------------------------------------------
     # Execute
     # ------------------------------------------------------------------
@@ -307,9 +317,10 @@ class T9CodePlugin:
                 decoded_results = self.decode_safe(text, language, max_results)
                 for i, result in enumerate(decoded_results):
                     confidence = min(result.get("score", 0.0), 1.0)
-                    scoring_info = self._get_score(result["word"], context) if enable_scoring else None
-                    if scoring_info and "score" in scoring_info:
-                        confidence = float(scoring_info["score"])
+                    if enable_scoring:
+                        fast_score = self._get_score_fast(result["word"])
+                        if fast_score > 0:
+                            confidence = fast_score
                     entry = {
                         "id": f"result_{i + 1}",
                         "text_output": result["word"],
@@ -326,8 +337,6 @@ class T9CodePlugin:
                             "word_count": result.get("metadata", {}).get("word_count", 1),
                         },
                     }
-                    if scoring_info:
-                        entry["scoring"] = scoring_info
                     standardized_response["results"].append(entry)
 
                 # Fallback: if no decoded results, provide a naive first-letter mapping suggestion

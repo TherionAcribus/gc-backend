@@ -581,12 +581,6 @@ class PostnetBarcodePlugin:
                         elif len(zip_code) == 11:
                             result["text_output"] = f"{zip_code[:5]}-{zip_code[5:9]}-{zip_code[9:]}"
 
-                        if enable_scoring:
-                            scoring_result = self._get_text_score(result["text_output"], context)
-                            if scoring_result:
-                                result["confidence"] = scoring_result.get("score", result["confidence"])
-                                result["scoring"] = scoring_result
-
                         results.append(result)
                 else:
                     patterns = self.detect_postnet_pattern(text)

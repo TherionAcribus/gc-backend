@@ -7,11 +7,12 @@ import time
 from typing import Any, Dict, List
 
 try:
-    from gc_backend.plugins.scoring import score_text
+    from gc_backend.plugins.scoring import score_text, score_text_fast
 
     _SCORING_AVAILABLE = True
 except Exception:  # pragma: no cover - optional dependency
     score_text = None
+    score_text_fast = None
     _SCORING_AVAILABLE = False
 
 
@@ -110,6 +111,14 @@ class UbchiCipherPlugin:
         except Exception:
             return None
 
+    def _get_score_fast(self, text: str) -> float:
+        if not _SCORING_AVAILABLE or not score_text_fast:
+            return 0.3
+        try:
+            return score_text_fast(self._clean_text(text))
+        except Exception:
+            return 0.3
+
     @staticmethod
     def _is_truthy(value: Any) -> bool:
         if isinstance(value, bool):
@@ -184,10 +193,7 @@ class UbchiCipherPlugin:
             elif do_bruteforce:
                 solutions = self.bruteforce(text, max_key_length=5, null_letters=null_letters)
                 for idx, sol in enumerate(solutions, 1):
-                    confidence = 0.3
-                    score_info = self._get_score(sol["decoded_text"], context) if enable_scoring else None
-                    if score_info and "score" in score_info:
-                        confidence = float(score_info["score"])
+                    confidence = self._get_score_fast(sol["decoded_text"]) if enable_scoring else 0.3
                     res = {
                         "id": f"result_{idx}",
                         "text_output": sol["decoded_text"],
@@ -195,8 +201,6 @@ class UbchiCipherPlugin:
                         "parameters": {"mode": "decode", "keyword": sol["keyword"], "null_letters": null_letters},
                         "metadata": {},
                     }
-                    if score_info:
-                        res["scoring"] = score_info
                     response["results"].append(res)
 
                 response["results"].sort(key=lambda r: r.get("confidence", 0), reverse=True)

@@ -43,12 +43,14 @@ class PrimeNumbersPlugin:
         self._prime_values = sorted(self.decode_table.keys(), key=len, reverse=True)
 
         try:
-            from gc_backend.plugins.scoring import score_text
+            from gc_backend.plugins.scoring import score_text, score_text_fast
 
             self._score_text = score_text
+            self._score_text_fast = score_text_fast
             self._scoring_available = True
         except Exception:
             self._score_text = None
+            self._score_text_fast = None
             self._scoring_available = False
 
     def _get_plugin_info(self, start_time: float) -> Dict[str, Any]:
@@ -73,6 +75,14 @@ class PrimeNumbersPlugin:
             return self._score_text(text, context=context or {})
         except Exception:
             return None
+
+    def _get_text_score_fast(self, text: str) -> float:
+        if not self._scoring_available or not self._score_text_fast:
+            return 0.0
+        try:
+            return self._score_text_fast(text)
+        except Exception:
+            return 0.0
 
     def _separator_to_string(self, separator: str, custom: str) -> str:
         if separator == "comma":
@@ -252,11 +262,10 @@ class PrimeNumbersPlugin:
                         for idx, segmentation in enumerate(segmentations, 1):
                             decoded, hits = self._decode_tokens(segmentation)
                             confidence = hits / len(segmentation) if segmentation else 0.0
-                            scoring_result = None
                             if enable_scoring:
-                                scoring_result = self._get_text_score(decoded, context)
-                                if scoring_result and "score" in scoring_result:
-                                    confidence = float(scoring_result["score"])
+                                fast_score = self._get_text_score_fast(decoded)
+                                if fast_score > 0:
+                                    confidence = fast_score
 
                             result = {
                                 "id": f"result_{len(results) + 1}",
@@ -275,8 +284,6 @@ class PrimeNumbersPlugin:
                                     "token_hits": hits,
                                 },
                             }
-                            if scoring_result:
-                                result["scoring"] = scoring_result
                             results.append(result)
 
                     results.sort(key=lambda item: item.get("confidence", 0.0), reverse=True)

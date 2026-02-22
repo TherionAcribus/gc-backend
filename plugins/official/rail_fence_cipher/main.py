@@ -11,12 +11,14 @@ class RailFenceCipherPlugin:
         self.version = "1.0.0"
 
         try:
-            from gc_backend.plugins.scoring import score_text
+            from gc_backend.plugins.scoring import score_text, score_text_fast
 
             self._score_text = score_text
+            self._score_text_fast = score_text_fast
             self._scoring_available = True
         except Exception:
             self._score_text = None
+            self._score_text_fast = None
             self._scoring_available = False
 
     @staticmethod
@@ -77,6 +79,14 @@ class RailFenceCipherPlugin:
             return self._score_text(cleaned_text, context=context or {})
         except Exception:
             return None
+
+    def _get_text_score_fast(self, text: str) -> float:
+        if not self._scoring_available or not self._score_text_fast:
+            return 0.3
+        try:
+            return self._score_text_fast(self._clean_text_for_scoring(text))
+        except Exception:
+            return 0.3
 
     def _confidence_for_key(self, key: int) -> float:
         if key <= 3:
@@ -205,11 +215,10 @@ class RailFenceCipherPlugin:
                 results: List[Dict[str, Any]] = []
                 for idx, sol in enumerate(solutions, start=1):
                     confidence = self._confidence_for_key(sol["key"])
-                    scoring_info = None
                     if enable_scoring:
-                        scoring_info = self._get_text_score(sol["decoded_text"], context)
-                        if scoring_info and "score" in scoring_info:
-                            confidence = float(scoring_info["score"])
+                        fast_score = self._get_text_score_fast(sol["decoded_text"])
+                        if fast_score > 0:
+                            confidence = fast_score
 
                     res = {
                         "id": f"result_{idx}",
@@ -223,8 +232,6 @@ class RailFenceCipherPlugin:
                         },
                         "metadata": {"processed_chars": len(text)},
                     }
-                    if scoring_info:
-                        res["scoring"] = scoring_info
                     results.append(res)
 
                 results.sort(key=lambda r: r.get("confidence", 0.0), reverse=True)
