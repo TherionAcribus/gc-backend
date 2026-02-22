@@ -249,6 +249,252 @@ class MetaSolverPlugin:
         return response
 
     # ------------------------------------------------------------------
+    # API streaming (SSE)
+    # ------------------------------------------------------------------
+    def execute_streaming(self, inputs: Dict[str, Any]):
+        """Générateur qui yield des événements de progression SSE.
+
+        Chaque élément yielded est un dict sérialisable en JSON avec un champ
+        ``event`` indiquant le type :
+        - ``init``       : liste des candidats, paramètres
+        - ``plugin_start`` : un sous-plugin démarre
+        - ``plugin_done``  : un sous-plugin a terminé (succès)
+        - ``plugin_error`` : un sous-plugin a échoué
+        - ``progress``     : avancement global (pourcentage, compteurs)
+        - ``result``       : résultat final complet (même format que execute())
+        """
+
+        start_time = time.time()
+
+        if not self._plugin_manager:
+            yield {"event": "result", "data": self._error_response("PluginManager non initialisé", start_time)}
+            return
+
+        text = (inputs.get("text") or "").strip()
+        if not text:
+            yield {"event": "result", "data": self._error_response("Aucun texte fourni", start_time)}
+            return
+
+        mode = (inputs.get("mode") or "decode").lower()
+        if mode not in {"detect", "decode"}:
+            yield {"event": "result", "data": self._error_response(f"Mode non supporté: {mode}", start_time)}
+            return
+
+        preset = (inputs.get("preset") or "all").lower()
+        plugin_list_raw = inputs.get("plugin_list") or ""
+        enable_bruteforce = bool(inputs.get("enable_bruteforce", True))
+        detect_coordinates = bool(inputs.get("detect_coordinates", True))
+        max_plugins = inputs.get("max_plugins")
+        try:
+            max_plugins_int: Optional[int] = None if max_plugins in (None, "") else int(max_plugins)
+            if max_plugins_int is not None and max_plugins_int < 0:
+                max_plugins_int = None
+        except (TypeError, ValueError):
+            max_plugins_int = None
+
+        explicit_plugins = self._parse_plugin_list(plugin_list_raw)
+        preset_filter = self._get_preset_filter(preset)
+
+        candidates = self._collect_candidates(
+            mode=mode,
+            preset_filter=preset_filter,
+            explicit_plugins=explicit_plugins,
+            max_plugins=max_plugins_int,
+        )
+
+        if not candidates:
+            yield {"event": "result", "data": self._error_response(
+                f"Aucun plugin éligible pour le mode '{mode}' avec le preset '{preset}'",
+                start_time,
+            )}
+            return
+
+        # Événement init
+        yield {
+            "event": "init",
+            "data": {
+                "total_plugins": len(candidates),
+                "plugins": [c["name"] for c in candidates],
+                "mode": mode,
+                "preset": preset,
+            },
+        }
+
+        execution_log: List[Dict[str, Any]] = []
+        aggregated_results: List[Dict[str, Any]] = []
+        combined_results: Dict[str, Dict[str, Any]] = {}
+        failed_plugins: List[Dict[str, Any]] = []
+        primary_coordinates: Optional[Dict[str, Any]] = None
+
+        request_payload = {
+            "text": text,
+            "mode": mode,
+            "detect_coordinates": detect_coordinates,
+            "enable_gps_detection": detect_coordinates,
+            "brute_force": enable_bruteforce,
+            "enable_bruteforce": enable_bruteforce,
+        }
+
+        for idx_candidate, candidate in enumerate(candidates):
+            plugin_name = candidate["name"]
+
+            # Événement plugin_start
+            yield {
+                "event": "plugin_start",
+                "data": {
+                    "plugin": plugin_name,
+                    "index": idx_candidate,
+                    "total": len(candidates),
+                },
+            }
+
+            plugin_start = time.time()
+            try:
+                plugin_inputs = dict(request_payload)
+                plugin_inputs.update(self._build_additional_inputs(candidate["metadata"]))
+
+                result = self._execute_with_fallback(plugin_name, plugin_inputs, candidate)
+                exec_time_ms = round((time.time() - plugin_start) * 1000, 2)
+                execution_log.append({
+                    "plugin": plugin_name,
+                    "status": result.get("status"),
+                    "execution_time_ms": exec_time_ms,
+                })
+
+                if result.get("status") != "success" and result.get("status") != "ok":
+                    reason = result.get("summary") or result.get("error", {}).get("message")
+                    failed_plugins.append({"plugin": plugin_name, "reason": reason})
+
+                    yield {
+                        "event": "plugin_error",
+                        "data": {
+                            "plugin": plugin_name,
+                            "index": idx_candidate,
+                            "total": len(candidates),
+                            "reason": reason,
+                            "execution_time_ms": exec_time_ms,
+                        },
+                    }
+                else:
+                    results_block = result.get("results") or []
+                    combined_results[plugin_name] = self._build_combined_entry(result)
+                    combined_results[plugin_name]["plugin"] = plugin_name
+
+                    if not primary_coordinates:
+                        primary_coordinates = (
+                            result.get("primary_coordinates")
+                            or combined_results[plugin_name].get("coordinates")
+                        )
+
+                    plugin_aggregated = []
+                    for idx, item in enumerate(results_block):
+                        enriched = dict(item)
+                        parameters = dict(enriched.get("parameters") or {})
+                        parameters.setdefault("plugin", plugin_name)
+                        parameters.setdefault("mode", mode)
+                        enriched["parameters"] = parameters
+                        original_id = enriched.get("id") or f"result_{idx+1}"
+                        unique_id = f"{plugin_name}::{original_id}"
+                        enriched["id"] = unique_id
+                        enriched.setdefault("original_id", original_id)
+                        enriched.setdefault("display_id", f"{plugin_name}_{idx+1}")
+                        enriched.setdefault("display_label", f"Résultat {idx+1} · {plugin_name}")
+                        enriched.setdefault("plugin", plugin_name)
+                        enriched.setdefault("source_plugin", plugin_name)
+                        aggregated_results.append(enriched)
+                        plugin_aggregated.append(enriched)
+
+                    yield {
+                        "event": "plugin_done",
+                        "data": {
+                            "plugin": plugin_name,
+                            "index": idx_candidate,
+                            "total": len(candidates),
+                            "execution_time_ms": exec_time_ms,
+                            "result_count": len(results_block),
+                            "results": plugin_aggregated,
+                            "combined": combined_results[plugin_name],
+                        },
+                    }
+
+            except Exception as exc:
+                exec_time_ms = round((time.time() - plugin_start) * 1000, 2)
+                failed_plugins.append({"plugin": plugin_name, "reason": str(exc)})
+                execution_log.append({"plugin": plugin_name, "status": "error", "error": str(exc)})
+
+                yield {
+                    "event": "plugin_error",
+                    "data": {
+                        "plugin": plugin_name,
+                        "index": idx_candidate,
+                        "total": len(candidates),
+                        "reason": str(exc),
+                        "execution_time_ms": exec_time_ms,
+                    },
+                }
+
+            # Événement progress
+            completed_count = idx_candidate + 1
+            yield {
+                "event": "progress",
+                "data": {
+                    "completed": completed_count,
+                    "total": len(candidates),
+                    "percentage": round(completed_count / len(candidates) * 100, 1),
+                    "results_so_far": len(aggregated_results),
+                    "failures_so_far": len(failed_plugins),
+                    "elapsed_ms": round((time.time() - start_time) * 1000, 2),
+                },
+            }
+
+        # Tri final
+        aggregated_results.sort(key=lambda item: float(item.get("confidence", 0)), reverse=True)
+
+        status = "success" if aggregated_results else "partial_success"
+        summary_message = (
+            f"{len(aggregated_results)} résultat(s) collecté(s)"
+            if aggregated_results
+            else "Aucun plugin n'a produit de résultat exploitable"
+        )
+
+        response: Dict[str, Any] = {
+            "status": status,
+            "plugin_info": {
+                "name": self.name,
+                "version": self.version,
+                "execution_time_ms": round((time.time() - start_time) * 1000, 2),
+                "mode": mode,
+                "preset": preset,
+                "executed_plugins": execution_log,
+            },
+            "inputs": {
+                "mode": mode,
+                "preset": preset,
+                "preset_filter": preset_filter if preset_filter else None,
+                "requested_plugins": sorted(explicit_plugins) if explicit_plugins else None,
+                "max_plugins": max_plugins_int,
+                "enable_bruteforce": enable_bruteforce,
+                "detect_coordinates": detect_coordinates,
+            },
+            "results": aggregated_results,
+            "combined_results": combined_results,
+            "primary_coordinates": primary_coordinates,
+            "failed_plugins": failed_plugins,
+            "summary": summary_message,
+            "summary_details": {
+                "message": summary_message,
+                "total_results": len(aggregated_results),
+                "plugins_considered": len(candidates),
+                "plugins_failed": len(failed_plugins),
+            },
+        }
+
+        if not aggregated_results and failed_plugins:
+            response["status"] = "error"
+
+        yield {"event": "result", "data": response}
+
+    # ------------------------------------------------------------------
     # Utilitaires privés
     # ------------------------------------------------------------------
     def _parse_plugin_list(self, raw: str) -> List[str]:

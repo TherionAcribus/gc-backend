@@ -659,6 +659,92 @@ def metasolver_eligible_plugins():
         }), 500
 
 
+@bp.route('/metasolver/execute-stream', methods=['POST'])
+def metasolver_execute_stream():
+    """
+    Exécute le metasolver en mode streaming SSE.
+
+    Chaque sous-plugin exécuté émet des événements en temps réel :
+    - init         : liste des candidats
+    - plugin_start : un sous-plugin démarre
+    - plugin_done  : un sous-plugin a terminé (avec résultats)
+    - plugin_error : un sous-plugin a échoué
+    - progress     : avancement global (pourcentage)
+    - result       : résultat final complet
+
+    Request Body (JSON):
+        inputs (dict): Paramètres d'entrée identiques à /metasolver/execute
+
+    Returns:
+        text/event-stream (SSE)
+
+    Example:
+        POST /api/plugins/metasolver/execute-stream
+        {"inputs": {"text": "URYYB", "mode": "decode", "preset": "all"}}
+    """
+    import json as _json
+    from flask import Response, stream_with_context
+
+    try:
+        data = request.get_json(force=True)
+    except Exception as json_error:
+        return jsonify({
+            "error": "JSON invalide",
+            "message": f"Le body doit être un JSON valide: {str(json_error)}"
+        }), 400
+
+    if not data or 'inputs' not in data:
+        return jsonify({
+            "error": "Requête invalide",
+            "message": "Le champ 'inputs' est requis"
+        }), 400
+
+    inputs = data['inputs']
+
+    manager = get_plugin_manager()
+
+    # Charger le plugin metasolver via le plugin manager
+    wrapper = manager.get_plugin(('metasolver'))
+    if not wrapper:
+        return jsonify({
+            "error": "Plugin metasolver non disponible",
+            "message": "Impossible de charger le plugin metasolver"
+        }), 500
+
+    # Accéder à l'instance brute du plugin pour appeler execute_streaming
+    raw_instance = getattr(wrapper, '_instance', None)
+    if not raw_instance or not hasattr(raw_instance, 'execute_streaming'):
+        return jsonify({
+            "error": "Streaming non supporté",
+            "message": "Le plugin metasolver ne supporte pas le mode streaming"
+        }), 500
+
+    logger.info(f"Démarrage exécution streaming metasolver avec inputs: {list(inputs.keys())}")
+
+    def generate():
+        try:
+            for event in raw_instance.execute_streaming(inputs):
+                event_type = event.get('event', 'message')
+                event_data = _json.dumps(event.get('data', {}), ensure_ascii=False)
+                yield f"event: {event_type}\ndata: {event_data}\n\n"
+        except Exception as exc:
+            error_data = _json.dumps({
+                "error": str(exc),
+                "type": type(exc).__name__
+            }, ensure_ascii=False)
+            yield f"event: error\ndata: {error_data}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive',
+        }
+    )
+
+
 @bp.route('/<plugin_name>', methods=['GET'])
 def get_plugin_info(plugin_name: str):
     """
