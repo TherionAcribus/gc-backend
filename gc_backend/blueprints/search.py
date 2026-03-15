@@ -1,0 +1,252 @@
+"""
+Blueprint pour la recherche globale dans la base de données GeoApp.
+Permet de chercher dans les géocaches (nom, description, hints, notes personnelles),
+les logs et les notes utilisateur.
+"""
+
+from flask import Blueprint, jsonify, request
+import logging
+import re
+from html import unescape
+
+from ..database import db
+from ..geocaches.models import Geocache, GeocacheLog, Note, GeocacheNote
+
+bp = Blueprint('search', __name__)
+logger = logging.getLogger(__name__)
+
+CONTEXT_CHARS = 80  # Nombre de caractères de contexte autour du match
+
+
+def _strip_html(html: str | None) -> str:
+    """Convertit du HTML en texte brut."""
+    if not html:
+        return ''
+    text = re.sub(r'<[^>]+>', ' ', html)
+    text = unescape(text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
+def _build_regex(query: str, case_sensitive: bool = False, use_regex: bool = False, use_wildcard: bool = False):
+    """Construit un pattern regex à partir de la query utilisateur."""
+    flags = 0 if case_sensitive else re.IGNORECASE
+
+    if use_regex:
+        try:
+            return re.compile(query, flags)
+        except re.error:
+            return None
+    elif use_wildcard:
+        escaped = re.escape(query)
+        pattern = escaped.replace(r'\*', '.*').replace(r'\?', '.')
+        return re.compile(pattern, flags)
+    else:
+        return re.compile(re.escape(query), flags)
+
+
+def _extract_snippets(text: str, pattern, max_snippets: int = 3) -> list[dict]:
+    """Extrait des snippets de contexte autour des matches."""
+    if not text or not pattern:
+        return []
+
+    snippets = []
+    for match in pattern.finditer(text):
+        if len(snippets) >= max_snippets:
+            break
+        start = max(0, match.start() - CONTEXT_CHARS)
+        end = min(len(text), match.end() + CONTEXT_CHARS)
+
+        prefix = ('…' if start > 0 else '') + text[start:match.start()]
+        matched = match.group()
+        suffix = text[match.end():end] + ('…' if end < len(text) else '')
+
+        snippets.append({
+            'prefix': prefix,
+            'match': matched,
+            'suffix': suffix,
+            'offset': match.start()
+        })
+
+    return snippets
+
+
+def _count_matches(text: str, pattern) -> int:
+    """Compte le nombre total de matches dans un texte."""
+    if not text or not pattern:
+        return 0
+    return len(pattern.findall(text))
+
+
+@bp.get('/api/search')
+def global_search():
+    """
+    Recherche globale dans la base de données.
+
+    Query params:
+        q (str): Terme de recherche (obligatoire)
+        case_sensitive (bool): Sensible à la casse (défaut: false)
+        use_regex (bool): Mode regex (défaut: false)
+        use_wildcard (bool): Mode wildcard (défaut: false)
+        scope (str): Périmètre - 'all', 'geocaches', 'logs', 'notes' (défaut: 'all')
+        zone_id (int): Filtrer par zone (optionnel)
+        limit (int): Nombre max de résultats par catégorie (défaut: 50)
+    """
+    query = request.args.get('q', '').strip()
+    if not query:
+        return jsonify({'error': 'Missing query parameter "q"'}), 400
+
+    case_sensitive = request.args.get('case_sensitive', 'false').lower() == 'true'
+    use_regex = request.args.get('use_regex', 'false').lower() == 'true'
+    use_wildcard = request.args.get('use_wildcard', 'false').lower() == 'true'
+    scope = request.args.get('scope', 'all')
+    zone_id = request.args.get('zone_id', type=int)
+    limit = request.args.get('limit', 50, type=int)
+    limit = min(limit, 200)
+
+    pattern = _build_regex(query, case_sensitive, use_regex, use_wildcard)
+    if pattern is None:
+        return jsonify({'error': 'Invalid regex pattern'}), 400
+
+    results = {
+        'query': query,
+        'options': {
+            'case_sensitive': case_sensitive,
+            'use_regex': use_regex,
+            'use_wildcard': use_wildcard,
+            'scope': scope
+        },
+        'geocaches': [],
+        'logs': [],
+        'notes': [],
+        'total_count': 0
+    }
+
+    try:
+        # --- Recherche dans les géocaches ---
+        if scope in ('all', 'geocaches'):
+            gc_query = Geocache.query
+            if zone_id is not None:
+                gc_query = gc_query.filter(Geocache.zone_id == zone_id)
+
+            geocaches = gc_query.all()
+            gc_results = []
+
+            for gc in geocaches:
+                matches_in = {}
+
+                # Chercher dans les champs texte
+                fields = {
+                    'name': gc.name,
+                    'gc_code': gc.gc_code,
+                    'owner': gc.owner,
+                    'description': _strip_html(gc.description_html or gc.description_raw),
+                    'description_override': _strip_html(gc.description_override_html or gc.description_override_raw),
+                    'hints': gc.hints_decoded or gc.hints,
+                    'hints_override': gc.hints_decoded_override,
+                    'personal_note': gc.gc_personal_note,
+                    'coordinates': gc.coordinates_raw,
+                    'original_coordinates': gc.original_coordinates_raw,
+                }
+
+                total_gc_matches = 0
+                for field_name, field_value in fields.items():
+                    if not field_value:
+                        continue
+                    count = _count_matches(str(field_value), pattern)
+                    if count > 0:
+                        snippets = _extract_snippets(str(field_value), pattern)
+                        matches_in[field_name] = {
+                            'count': count,
+                            'snippets': snippets
+                        }
+                        total_gc_matches += count
+
+                if total_gc_matches > 0:
+                    gc_results.append({
+                        'id': gc.id,
+                        'gc_code': gc.gc_code,
+                        'name': gc.name,
+                        'type': gc.type,
+                        'zone_id': gc.zone_id,
+                        'total_matches': total_gc_matches,
+                        'matches_in': matches_in
+                    })
+
+            # Trier par nombre de matches décroissant
+            gc_results.sort(key=lambda x: x['total_matches'], reverse=True)
+            results['geocaches'] = gc_results[:limit]
+
+        # --- Recherche dans les logs ---
+        if scope in ('all', 'logs'):
+            log_query = GeocacheLog.query.join(Geocache)
+            if zone_id is not None:
+                log_query = log_query.filter(Geocache.zone_id == zone_id)
+
+            logs = log_query.all()
+            log_results = []
+
+            for log in logs:
+                text = log.text or ''
+                author = log.author or ''
+                combined = f"{author} {text}"
+                count = _count_matches(combined, pattern)
+
+                if count > 0:
+                    snippets = _extract_snippets(text, pattern)
+                    log_results.append({
+                        'id': log.id,
+                        'geocache_id': log.geocache_id,
+                        'geocache_gc_code': log.geocache.gc_code if log.geocache else None,
+                        'geocache_name': log.geocache.name if log.geocache else None,
+                        'author': log.author,
+                        'log_type': log.log_type,
+                        'date': log.date.isoformat() if log.date else None,
+                        'total_matches': count,
+                        'snippets': snippets
+                    })
+
+            log_results.sort(key=lambda x: x['total_matches'], reverse=True)
+            results['logs'] = log_results[:limit]
+
+        # --- Recherche dans les notes ---
+        if scope in ('all', 'notes'):
+            note_query = Note.query
+            notes = note_query.all()
+            note_results = []
+
+            for note in notes:
+                text = note.content or ''
+                count = _count_matches(text, pattern)
+
+                if count > 0:
+                    snippets = _extract_snippets(text, pattern)
+                    # Récupérer les géocaches liées
+                    linked_geocaches = [
+                        {'id': gc.id, 'gc_code': gc.gc_code, 'name': gc.name}
+                        for gc in note.geocaches
+                    ]
+                    note_results.append({
+                        'id': note.id,
+                        'note_type': note.note_type,
+                        'source': note.source,
+                        'total_matches': count,
+                        'snippets': snippets,
+                        'linked_geocaches': linked_geocaches,
+                        'updated_at': note.updated_at.isoformat() if note.updated_at else None,
+                    })
+
+            note_results.sort(key=lambda x: x['total_matches'], reverse=True)
+            results['notes'] = note_results[:limit]
+
+        results['total_count'] = (
+            len(results['geocaches']) +
+            len(results['logs']) +
+            len(results['notes'])
+        )
+
+        return jsonify(results)
+
+    except Exception as e:
+        logger.error(f"Global search error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
