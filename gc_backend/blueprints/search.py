@@ -313,22 +313,33 @@ def global_search():
             import os
             import json
             
+            # Chemin: gc_backend/blueprints/search.py -> gc_backend/blueprints/ -> gc_backend/ -> gc-backend/ -> alphabets/
             alphabets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'alphabets')
             alphabet_results = []
+            
+            logger.debug(f"Searching alphabets in: {alphabets_dir}, exists: {os.path.exists(alphabets_dir)}")
 
             if os.path.exists(alphabets_dir):
-                for alphabet_name in os.listdir(alphabets_dir):
+                alphabet_folders = os.listdir(alphabets_dir)
+                logger.debug(f"Found {len(alphabet_folders)} items in alphabets directory: {alphabet_folders[:5]}")
+                
+                for alphabet_name in alphabet_folders:
                     alphabet_path = os.path.join(alphabets_dir, alphabet_name)
                     if not os.path.isdir(alphabet_path):
+                        logger.debug(f"Skipping {alphabet_name} (not a directory)")
                         continue
 
-                    metadata_path = os.path.join(alphabet_path, 'metadata.json')
-                    if not os.path.exists(metadata_path):
+                    alphabet_json_path = os.path.join(alphabet_path, 'alphabet.json')
+                    if not os.path.exists(alphabet_json_path):
+                        logger.debug(f"Skipping {alphabet_name} (no alphabet.json)")
                         continue
 
                     try:
-                        with open(metadata_path, 'r', encoding='utf-8') as f:
+                        logger.debug(f"Reading alphabet.json for {alphabet_name}")
+                        with open(alphabet_json_path, 'r', encoding='utf-8') as f:
                             metadata = json.load(f)
+                        
+                        logger.debug(f"Alphabet {alphabet_name}: name={metadata.get('name')}, description={metadata.get('description', '')[:50]}")
 
                         count = 0
                         matched_fields = {}
@@ -367,6 +378,7 @@ def global_search():
                                 count += alias_count
 
                         if count > 0:
+                            logger.debug(f"Alphabet {alphabet_name} matched with {count} occurrences")
                             alphabet_results.append({
                                 'id': alphabet_name,
                                 'name': name,
@@ -375,6 +387,8 @@ def global_search():
                                 'total_matches': count,
                                 'matches_in': matched_fields
                             })
+                        else:
+                            logger.debug(f"Alphabet {alphabet_name} did not match pattern")
 
                     except (json.JSONDecodeError, IOError) as e:
                         logger.warning(f"Error reading alphabet {alphabet_name}: {e}")
@@ -382,6 +396,7 @@ def global_search():
 
             alphabet_results.sort(key=lambda x: x['total_matches'], reverse=True)
             results['alphabets'] = alphabet_results[:limit]
+            logger.debug(f"Total alphabets found: {len(alphabet_results)}")
 
         results['total_count'] = (
             len(results['geocaches']) +
