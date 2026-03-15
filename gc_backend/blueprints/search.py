@@ -127,7 +127,7 @@ def global_search():
 
     try:
         # --- Recherche dans les géocaches ---
-        if scope in ('all', 'geocaches'):
+        if scope in ('all', 'database', 'geocaches'):
             gc_query = Geocache.query
             if zone_id is not None:
                 gc_query = gc_query.filter(Geocache.zone_id == zone_id)
@@ -181,7 +181,7 @@ def global_search():
             results['geocaches'] = gc_results[:limit]
 
         # --- Recherche dans les logs ---
-        if scope in ('all', 'logs'):
+        if scope in ('all', 'database', 'logs'):
             log_query = GeocacheLog.query.join(Geocache)
             if zone_id is not None:
                 log_query = log_query.filter(Geocache.zone_id == zone_id)
@@ -213,7 +213,7 @@ def global_search():
             results['logs'] = log_results[:limit]
 
         # --- Recherche dans les notes ---
-        if scope in ('all', 'notes'):
+        if scope in ('all', 'database', 'notes'):
             note_query = Note.query
             notes = note_query.all()
             note_results = []
@@ -243,7 +243,7 @@ def global_search():
             results['notes'] = note_results[:limit]
 
         # --- Recherche dans les plugins ---
-        if scope in ('all', 'plugins'):
+        if scope in ('all', 'database', 'plugins'):
             plugin_results = []
             plugins = Plugin.query.all()
 
