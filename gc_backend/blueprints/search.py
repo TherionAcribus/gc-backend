@@ -11,6 +11,7 @@ from html import unescape
 
 from ..database import db
 from ..geocaches.models import Geocache, GeocacheLog, Note, GeocacheNote
+from ..plugins.models import Plugin
 
 bp = Blueprint('search', __name__)
 logger = logging.getLogger(__name__)
@@ -88,7 +89,7 @@ def global_search():
         case_sensitive (bool): Sensible à la casse (défaut: false)
         use_regex (bool): Mode regex (défaut: false)
         use_wildcard (bool): Mode wildcard (défaut: false)
-        scope (str): Périmètre - 'all', 'geocaches', 'logs', 'notes' (défaut: 'all')
+        scope (str): Périmètre - 'all', 'geocaches', 'logs', 'notes', 'plugins', 'alphabets' (défaut: 'all')
         zone_id (int): Filtrer par zone (optionnel)
         limit (int): Nombre max de résultats par catégorie (défaut: 50)
     """
@@ -119,6 +120,8 @@ def global_search():
         'geocaches': [],
         'logs': [],
         'notes': [],
+        'plugins': [],
+        'alphabets': [],
         'total_count': 0
     }
 
@@ -239,10 +242,153 @@ def global_search():
             note_results.sort(key=lambda x: x['total_matches'], reverse=True)
             results['notes'] = note_results[:limit]
 
+        # --- Recherche dans les plugins ---
+        if scope in ('all', 'plugins'):
+            plugin_results = []
+            plugins = Plugin.query.all()
+
+            for plugin in plugins:
+                count = 0
+                matched_fields = {}
+
+                # Chercher dans le nom
+                name_count = _count_matches(plugin.name, pattern)
+                if name_count > 0:
+                    matched_fields['name'] = {
+                        'count': name_count,
+                        'snippets': _extract_snippets(plugin.name, pattern)
+                    }
+                    count += name_count
+
+                # Chercher dans la description
+                if plugin.description:
+                    desc_count = _count_matches(plugin.description, pattern)
+                    if desc_count > 0:
+                        matched_fields['description'] = {
+                            'count': desc_count,
+                            'snippets': _extract_snippets(plugin.description, pattern)
+                        }
+                        count += desc_count
+
+                # Chercher dans l'auteur
+                if plugin.author:
+                    author_count = _count_matches(plugin.author, pattern)
+                    if author_count > 0:
+                        matched_fields['author'] = {
+                            'count': author_count,
+                            'snippets': _extract_snippets(plugin.author, pattern)
+                        }
+                        count += author_count
+
+                # Chercher dans les catégories
+                if plugin.categories:
+                    categories_text = ' '.join(plugin.categories)
+                    cat_count = _count_matches(categories_text, pattern)
+                    if cat_count > 0:
+                        matched_fields['categories'] = {
+                            'count': cat_count,
+                            'snippets': _extract_snippets(categories_text, pattern)
+                        }
+                        count += cat_count
+
+                if count > 0:
+                    plugin_results.append({
+                        'id': plugin.id,
+                        'name': plugin.name,
+                        'version': plugin.version,
+                        'description': plugin.description,
+                        'author': plugin.author,
+                        'categories': plugin.categories or [],
+                        'source': plugin.source,
+                        'enabled': plugin.enabled,
+                        'total_matches': count,
+                        'matches_in': matched_fields
+                    })
+
+            plugin_results.sort(key=lambda x: x['total_matches'], reverse=True)
+            results['plugins'] = plugin_results[:limit]
+
+        # --- Recherche dans les alphabets ---
+        if scope in ('all', 'alphabets'):
+            import os
+            import json
+            
+            alphabets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'alphabets')
+            alphabet_results = []
+
+            if os.path.exists(alphabets_dir):
+                for alphabet_name in os.listdir(alphabets_dir):
+                    alphabet_path = os.path.join(alphabets_dir, alphabet_name)
+                    if not os.path.isdir(alphabet_path):
+                        continue
+
+                    metadata_path = os.path.join(alphabet_path, 'metadata.json')
+                    if not os.path.exists(metadata_path):
+                        continue
+
+                    try:
+                        with open(metadata_path, 'r', encoding='utf-8') as f:
+                            metadata = json.load(f)
+
+                        count = 0
+                        matched_fields = {}
+
+                        # Chercher dans le nom
+                        name = metadata.get('name', alphabet_name)
+                        name_count = _count_matches(name, pattern)
+                        if name_count > 0:
+                            matched_fields['name'] = {
+                                'count': name_count,
+                                'snippets': _extract_snippets(name, pattern)
+                            }
+                            count += name_count
+
+                        # Chercher dans la description
+                        description = metadata.get('description', '')
+                        if description:
+                            desc_count = _count_matches(description, pattern)
+                            if desc_count > 0:
+                                matched_fields['description'] = {
+                                    'count': desc_count,
+                                    'snippets': _extract_snippets(description, pattern)
+                                }
+                                count += desc_count
+
+                        # Chercher dans les alias
+                        aliases = metadata.get('aliases', [])
+                        if aliases:
+                            aliases_text = ' '.join(aliases)
+                            alias_count = _count_matches(aliases_text, pattern)
+                            if alias_count > 0:
+                                matched_fields['aliases'] = {
+                                    'count': alias_count,
+                                    'snippets': _extract_snippets(aliases_text, pattern)
+                                }
+                                count += alias_count
+
+                        if count > 0:
+                            alphabet_results.append({
+                                'id': alphabet_name,
+                                'name': name,
+                                'description': description,
+                                'aliases': aliases,
+                                'total_matches': count,
+                                'matches_in': matched_fields
+                            })
+
+                    except (json.JSONDecodeError, IOError) as e:
+                        logger.warning(f"Error reading alphabet {alphabet_name}: {e}")
+                        continue
+
+            alphabet_results.sort(key=lambda x: x['total_matches'], reverse=True)
+            results['alphabets'] = alphabet_results[:limit]
+
         results['total_count'] = (
             len(results['geocaches']) +
             len(results['logs']) +
-            len(results['notes'])
+            len(results['notes']) +
+            len(results['plugins']) +
+            len(results['alphabets'])
         )
 
         return jsonify(results)
