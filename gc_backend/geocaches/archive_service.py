@@ -91,10 +91,24 @@ class ArchiveService:
         Ne synchronise que si la géocache est en état 'in_progress', 'solved',
         ou a des coordonnées corrigées / est trouvée, sauf si force=True.
 
+        Respecte la préférence `geoApp.archive.autoSync.enabled` (défaut: True).
+        Si désactivée, la synchronisation est ignorée sauf si force=True (snapshot avant suppression).
+
         Returns True si une entrée a été créée ou mise à jour, False sinon.
         """
         from ..database import db
         from .models import SolvedGeocacheArchive
+
+        # Vérifier la préférence d'archivage automatique (ne bloque pas le force=True)
+        if not force:
+            try:
+                from ..utils.preferences import get_value_or_default
+                auto_sync_enabled = get_value_or_default('geoApp.archive.autoSync.enabled')
+                if auto_sync_enabled is False:
+                    logger.debug(f"Archive auto-sync disabled by preference, skipping sync for {geocache.gc_code}")
+                    return False
+            except Exception:
+                pass  # En cas d'erreur, on continue normalement
 
         if not force and not _should_archive(geocache):
             return False

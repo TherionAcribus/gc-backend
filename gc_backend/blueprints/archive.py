@@ -183,6 +183,143 @@ def restore_archive(gc_code: str):
         return jsonify({'error': str(e)}), 500
 
 
+@bp.delete('/api/archive')
+def bulk_delete_archives():
+    """
+    Supprime des entrées de l'archive en masse.
+
+    ⚠️ OPÉRATION DESTRUCTIVE ET IRRÉVERSIBLE ⚠️
+    Nécessite le champ `confirm: true` dans le body JSON pour s'exécuter.
+
+    Body JSON:
+        {
+            "confirm": true,           -- OBLIGATOIRE, protection anti-accident
+            "filter": "all"            -- "all" | "by_status" | "orphaned" | "before_date"
+            "status": "not_solved"     -- utilisé si filter="by_status"
+            "before_date": "2025-01-01" -- utilisé si filter="before_date" (ISO date)
+        }
+
+    Retourne le nombre d'entrées supprimées.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+
+        if not data.get('confirm'):
+            return jsonify({
+                'error': 'Confirmation requise',
+                'detail': 'Le champ "confirm" doit être true pour exécuter cette opération destructive.'
+            }), 400
+
+        filter_type = data.get('filter', 'all')
+
+        from ..database import db
+        from ..geocaches.models import SolvedGeocacheArchive, Geocache
+
+        deleted = 0
+
+        if filter_type == 'all':
+            deleted = SolvedGeocacheArchive.query.delete()
+            db.session.commit()
+            logger.warning(f"BULK DELETE: all archive entries deleted ({deleted})")
+
+        elif filter_type == 'by_status':
+            status = data.get('status')
+            if not status:
+                return jsonify({'error': 'Le champ "status" est requis pour filter="by_status"'}), 400
+            deleted = SolvedGeocacheArchive.query.filter_by(solved_status=status).delete()
+            db.session.commit()
+            logger.warning(f"BULK DELETE: {deleted} archive entries with status={status} deleted")
+
+        elif filter_type == 'orphaned':
+            existing_codes = {r[0] for r in db.session.query(Geocache.gc_code).all()}
+            orphans = SolvedGeocacheArchive.query.filter(
+                ~SolvedGeocacheArchive.gc_code.in_(existing_codes)
+            ).all()
+            deleted = len(orphans)
+            for entry in orphans:
+                db.session.delete(entry)
+            db.session.commit()
+            logger.warning(f"BULK DELETE: {deleted} orphaned archive entries deleted")
+
+        elif filter_type == 'before_date':
+            before_date_str = data.get('before_date')
+            if not before_date_str:
+                return jsonify({'error': 'Le champ "before_date" est requis pour filter="before_date"'}), 400
+            try:
+                from datetime import datetime
+                before_date = datetime.fromisoformat(before_date_str)
+            except ValueError:
+                return jsonify({'error': f'Format de date invalide: {before_date_str} (attendu: ISO 8601)'}), 400
+            deleted = SolvedGeocacheArchive.query.filter(
+                SolvedGeocacheArchive.updated_at < before_date
+            ).delete()
+            db.session.commit()
+            logger.warning(f"BULK DELETE: {deleted} archive entries older than {before_date_str} deleted")
+
+        else:
+            return jsonify({'error': f'Filtre inconnu: {filter_type}'}), 400
+
+        return jsonify({
+            'deleted': deleted,
+            'filter': filter_type,
+            'warning': 'Opération irréversible exécutée.',
+        })
+    except Exception as e:
+        from ..database import db
+        db.session.rollback()
+        logger.error(f"Error in bulk_delete_archives: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.get('/api/archive/settings')
+def get_archive_settings():
+    """Retourne les paramètres d'archivage (préférence auto-sync)."""
+    try:
+        from ..utils.preferences import get_value_or_default
+        auto_sync = get_value_or_default('geoApp.archive.autoSync.enabled')
+        return jsonify({
+            'auto_sync_enabled': auto_sync if auto_sync is not None else True,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.put('/api/archive/settings')
+def update_archive_settings():
+    """
+    Met à jour les paramètres d'archivage.
+
+    Body JSON:
+        { "auto_sync_enabled": false }
+
+    ⚠️ Désactiver auto_sync est déconseillé.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        if 'auto_sync_enabled' not in data:
+            return jsonify({'error': 'Champ "auto_sync_enabled" requis'}), 400
+
+        from ..models import AppConfig
+        from ..database import db
+
+        value = bool(data['auto_sync_enabled'])
+        AppConfig.set_value('geoApp.archive.autoSync.enabled', str(value).lower())
+        db.session.commit()
+
+        if not value:
+            logger.warning("Archive auto-sync DISABLED by user via settings API")
+
+        return jsonify({
+            'auto_sync_enabled': value,
+            'warning': None if value else '⚠️ L\'archivage automatique est désactivé. Les données de résolution ne seront plus sauvegardées automatiquement.',
+        })
+    except Exception as e:
+        from ..database import db
+        db.session.rollback()
+        logger.error(f"Error updating archive settings: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
 @bp.post('/api/archive/<string:gc_code>/sync')
 def force_sync_archive(gc_code: str):
     """
