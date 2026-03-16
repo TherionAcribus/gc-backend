@@ -954,6 +954,18 @@ def execute_plugin(plugin_name: str):
         except Exception as e:
             logger.warning(f"Scoring integration error for {plugin_name}: {e}")
          
+        # Tracking : si le plugin s'exécute avec succès sur une géocache, enregistrer dans l'archive
+        try:
+            geocache_id_raw = inputs.get('geocache_id')
+            has_results = bool(result.get('results')) or result.get('status') == 'success'
+            if geocache_id_raw and has_results:
+                geocache_for_tracking = Geocache.query.get(int(geocache_id_raw))
+                if geocache_for_tracking:
+                    from ..geocaches.archive_service import ArchiveService
+                    ArchiveService.add_resolution_plugin(geocache_for_tracking.gc_code, plugin_name)
+        except Exception:
+            pass  # Le tracking ne doit jamais bloquer l'exécution du plugin
+
         return jsonify(result), 200
         
     except Exception as e:

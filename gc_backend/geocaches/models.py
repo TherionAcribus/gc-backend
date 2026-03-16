@@ -376,3 +376,80 @@ class GeocacheNote(db.Model):
     note_id = db.Column(db.Integer, db.ForeignKey('note.id'), primary_key=True)
     added_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
+
+class SolvedGeocacheArchive(db.Model):
+    """
+    Table d'archive des données de résolution des géocaches.
+    Persiste indépendamment de la table geocache (pas de FK).
+    Survit à la suppression de la géocache.
+    """
+    __tablename__ = 'solved_geocache_archive'
+
+    id = db.Column(db.Integer, primary_key=True)
+    gc_code = db.Column(db.String(20), nullable=False, unique=True, index=True)
+
+    # Informations de base (contexte)
+    name = db.Column(db.String(255))
+    cache_type = db.Column(db.String(100))
+    difficulty = db.Column(db.Float)
+    terrain = db.Column(db.Float)
+
+    # Résolution
+    solved_status = db.Column(db.String(20), default='not_solved')  # not_solved, in_progress, solved
+    solved_coordinates_raw = db.Column(db.String(100))
+    solved_latitude = db.Column(db.Float)
+    solved_longitude = db.Column(db.Float)
+    original_coordinates_raw = db.Column(db.String(100))
+
+    # Données de travail (snapshots)
+    notes_snapshot = db.Column(db.Text)         # JSON list of {content, note_type, source, source_plugin}
+    personal_note = db.Column(db.Text)
+    formula_data = db.Column(db.Text)           # JSON {variables: {A:1,...}, formula: '...', result: '...'}
+    waypoints_snapshot = db.Column(db.Text)     # JSON list of waypoints
+
+    # Trouvée physiquement
+    found = db.Column(db.Boolean)
+    found_date = db.Column(db.DateTime)
+
+    # Traçabilité de la résolution
+    resolution_method = db.Column(db.String(50))   # manual, formula, plugin, brute_force
+    resolution_plugins = db.Column(db.Text)         # JSON list of plugin names
+
+    # Métadonnées
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> dict:
+        import json as _json
+        def _load(val):
+            if val is None:
+                return None
+            try:
+                return _json.loads(val)
+            except Exception:
+                return val
+
+        return {
+            'id': self.id,
+            'gc_code': self.gc_code,
+            'name': self.name,
+            'cache_type': self.cache_type,
+            'difficulty': self.difficulty,
+            'terrain': self.terrain,
+            'solved_status': self.solved_status,
+            'solved_coordinates_raw': self.solved_coordinates_raw,
+            'solved_latitude': self.solved_latitude,
+            'solved_longitude': self.solved_longitude,
+            'original_coordinates_raw': self.original_coordinates_raw,
+            'notes_snapshot': _load(self.notes_snapshot),
+            'personal_note': self.personal_note,
+            'formula_data': _load(self.formula_data),
+            'waypoints_snapshot': _load(self.waypoints_snapshot),
+            'found': self.found,
+            'found_date': self.found_date.isoformat() if self.found_date else None,
+            'resolution_method': self.resolution_method,
+            'resolution_plugins': _load(self.resolution_plugins),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+

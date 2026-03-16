@@ -8,6 +8,7 @@ from ..models import Zone
 from .models import Geocache, GeocacheWaypoint, GeocacheChecker
 from .scraper import GeocachingScraper
 from .image_sync import ensure_images_v2_for_geocache
+from .archive_service import ArchiveService
 
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,23 @@ class GeocacheImporter:
             db.session.flush()
 
             ensure_images_v2_for_geocache(g)
+
+            # Restaurer les données depuis l'archive si elle existe
+            archive = ArchiveService.get_by_gc_code(code)
+            if archive:
+                logger.info(f"Archive found for {code}, restoring resolution data")
+                if archive.get('solved_status') and archive['solved_status'] != 'not_solved':
+                    g.solved = archive['solved_status']
+                if archive.get('solved_coordinates_raw'):
+                    g.coordinates_raw = archive['solved_coordinates_raw']
+                    g.latitude = archive.get('solved_latitude')
+                    g.longitude = archive.get('solved_longitude')
+                    g.is_corrected = True
+                if archive.get('personal_note') and not g.gc_personal_note:
+                    g.gc_personal_note = archive['personal_note']
+                if archive.get('found') and not g.found:
+                    g.found = archive['found']
+                    g.found_date = None  # found_date will be set from archive JSON if needed
 
             # Persistance des relations si disponibles
             for w in getattr(s, 'waypoints', []) or []:

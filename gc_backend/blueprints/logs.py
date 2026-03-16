@@ -15,6 +15,7 @@ from flask import Blueprint, jsonify, request
 
 from ..database import db
 from ..geocaches.models import Geocache, GeocacheLog
+from ..geocaches.archive_service import ArchiveService
 from ..services.geocaching_logs import GeocachingLogsClient
 from ..services.geocaching_submit_logs import GeocachingSubmitLogsClient
 
@@ -262,6 +263,7 @@ def submit_geocache_log(geocache_id: int):
             geocache.found = True
             geocache.found_date = datetime.now(timezone.utc)
             db.session.commit()
+            ArchiveService.sync_from_geocache(geocache)
 
         return jsonify({
             'geocache_id': geocache_id,

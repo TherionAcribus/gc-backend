@@ -13,7 +13,7 @@ def init_db(app):
     with app.app_context():
         from .models import Zone, AppConfig  # noqa
         # Importer les modèles Geocache, GeocacheLog et Notes pour la création de table
-        from .geocaches.models import Geocache, GeocacheLog, Note, GeocacheNote, GeocacheImage, GeocacheWaypoint  # noqa: F401
+        from .geocaches.models import Geocache, GeocacheLog, Note, GeocacheNote, GeocacheImage, GeocacheWaypoint, SolvedGeocacheArchive  # noqa: F401
         # Importer le modèle Plugin pour la création de table
         from .plugins.models import Plugin  # noqa: F401
 

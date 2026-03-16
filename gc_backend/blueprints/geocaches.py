@@ -12,6 +12,7 @@ import re
 from ..database import db
 from ..geocaches.models import Geocache
 from ..geocaches.importer import GeocacheImporter
+from ..geocaches.archive_service import ArchiveService
 from ..geocaches.scraper import GeocachingScraper
 from ..geocaches.search_client import GeocachingSearchClient
 from ..geocaches.image_storage import remove_geocache_dir
@@ -896,6 +897,8 @@ def delete_geocache(geocache_id: int):
         gc_code = geocache.gc_code
         logger.info(f"Deleting geocache {gc_code} (id={geocache_id})")
         
+        ArchiveService.snapshot_before_delete(geocache)
+
         db.session.delete(geocache)
         db.session.commit()
 
@@ -1657,6 +1660,10 @@ def create_waypoint(geocache_id: int):
         logger.info(f"[CREATE WAYPOINT] Après commit - waypoint.gc_coords: {waypoint.gc_coords}")
         logger.info(f"[CREATE WAYPOINT] Après commit - waypoint.latitude: {waypoint.latitude}")
         logger.info(f"[CREATE WAYPOINT] Après commit - waypoint.longitude: {waypoint.longitude}")
+
+        if (geocache.solved or 'not_solved') in ('in_progress', 'solved') or geocache.is_corrected:
+            ArchiveService.sync_from_geocache(geocache)
+
         return jsonify(waypoint.to_dict()), 201
         
     except Exception as e:
@@ -1748,6 +1755,11 @@ def update_waypoint(geocache_id: int, waypoint_id: int):
         logger.info(f"[UPDATE WAYPOINT] Après commit - waypoint.gc_coords: {waypoint.gc_coords}")
         logger.info(f"[UPDATE WAYPOINT] Après commit - waypoint.latitude: {waypoint.latitude}")
         logger.info(f"[UPDATE WAYPOINT] Après commit - waypoint.longitude: {waypoint.longitude}")
+
+        geocache_for_archive = Geocache.query.get(geocache_id)
+        if geocache_for_archive and (geocache_for_archive.solved or 'not_solved') in ('in_progress', 'solved'):
+            ArchiveService.sync_from_geocache(geocache_for_archive)
+
         return jsonify(waypoint.to_dict())
         
     except Exception as e:
@@ -1947,6 +1959,8 @@ def update_coordinates(geocache_id: int):
         geocache.is_corrected = True
         
         db.session.commit()
+
+        ArchiveService.sync_from_geocache(geocache)
         
         logger.info(f"Updated coordinates for geocache {geocache_id}")
         return jsonify({'success': True, 'geocache': geocache.to_dict()})
@@ -2012,6 +2026,8 @@ def reset_coordinates(geocache_id: int):
         geocache.is_corrected = False
         
         db.session.commit()
+
+        ArchiveService.sync_from_geocache(geocache)
         
         logger.info(f"Reset coordinates for geocache {geocache_id}")
         return jsonify({'success': True, 'geocache': geocache.to_dict()})
@@ -2062,6 +2078,8 @@ def update_solved_status(geocache_id: int):
 
         geocache.solved = solved_status
         db.session.commit()
+
+        ArchiveService.sync_from_geocache(geocache)
 
         logger.info(f"Updated solved status for geocache {geocache_id} to {solved_status}")
         return jsonify({'success': True, 'solved': solved_status})
