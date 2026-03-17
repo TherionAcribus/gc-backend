@@ -2060,6 +2060,186 @@ def reset_description(geocache_id: int):
         return jsonify({'error': str(e)}), 500
 
 
+@bp.post('/api/geocaches/<int:geocache_id>/push-corrected-coordinates')
+def push_corrected_coordinates(geocache_id: int):
+    """
+    Envoie les coordonnées corrigées de la géocache vers Geocaching.com.
+
+    La géocache doit avoir des coordonnées corrigées (is_corrected=True).
+    Utilise le service d'authentification centralisé (GeocachingAuthService).
+
+    Returns:
+        200 {'success': True, 'message': '...'}
+        400 si pas de coordonnées corrigées ou code GC manquant
+        401 si non connecté à Geocaching.com
+        500 en cas d'erreur réseau ou API
+    """
+    try:
+        from ..services.geocaching_push_coordinates import GeocachingPushCoordinatesClient
+        from ..services.geocaching_auth import get_auth_service
+
+        geocache = Geocache.query.get(geocache_id)
+        if not geocache:
+            return jsonify({'error': 'Geocache not found'}), 404
+
+        if not geocache.gc_code:
+            return jsonify({'error': 'Code GC manquant pour cette géocache'}), 400
+
+        if not geocache.is_corrected or geocache.latitude is None or geocache.longitude is None:
+            return jsonify({'error': 'Aucune coordonnée corrigée disponible pour cette géocache'}), 400
+
+        auth_service = get_auth_service()
+        if not auth_service.is_logged_in():
+            return jsonify({'error': 'Non connecté à Geocaching.com — configurez l\'authentification'}), 401
+
+        client = GeocachingPushCoordinatesClient()
+        result = client.push_corrected_coordinates(
+            gc_code=geocache.gc_code,
+            latitude=geocache.latitude,
+            longitude=geocache.longitude,
+        )
+
+        if not result.get('ok'):
+            status_code = result.get('status', 500)
+            error_msg = result.get('error') or result.get('body') or 'Erreur inconnue'
+            logger.error(f"Push corrected coords failed for {geocache.gc_code}: {error_msg}")
+            if status_code in (401, 403):
+                return jsonify({'error': error_msg}), 401
+            return jsonify({'error': error_msg}), 502
+
+        logger.info(f"Corrected coordinates pushed to Geocaching.com for {geocache.gc_code}")
+        return jsonify({
+            'success': True,
+            'message': f'Coordonnées corrigées envoyées vers Geocaching.com ({geocache.gc_code})',
+            'gc_code': geocache.gc_code,
+            'latitude': geocache.latitude,
+            'longitude': geocache.longitude,
+            'coordinates_raw': geocache.coordinates_raw,
+        })
+
+    except Exception as e:
+        logger.error(f"Error pushing corrected coordinates for geocache {geocache_id}: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.post('/api/geocaches/<int:geocache_id>/waypoints/<int:waypoint_id>/push-coordinates')
+def push_waypoint_coordinates(geocache_id: int, waypoint_id: int):
+    """
+    Envoie les coordonnées d'un waypoint comme coordonnées corrigées vers Geocaching.com.
+
+    Utile pour définir la position finale d'une mystery cache depuis un waypoint résolu.
+
+    Returns:
+        200 {'success': True, 'message': '...'}
+        400 si coordonnées manquantes
+        401 si non connecté
+        404 si geocache ou waypoint introuvable
+        502 si l'API Geocaching.com renvoie une erreur
+    """
+    try:
+        from ..services.geocaching_push_coordinates import GeocachingPushCoordinatesClient
+        from ..services.geocaching_auth import get_auth_service
+        from ..geocaches.models import GeocacheWaypoint
+
+        geocache = Geocache.query.get(geocache_id)
+        if not geocache:
+            return jsonify({'error': 'Geocache not found'}), 404
+
+        if not geocache.gc_code:
+            return jsonify({'error': 'Code GC manquant pour cette géocache'}), 400
+
+        waypoint = GeocacheWaypoint.query.filter_by(id=waypoint_id, geocache_id=geocache_id).first()
+        if not waypoint:
+            return jsonify({'error': 'Waypoint not found'}), 404
+
+        if waypoint.latitude is None or waypoint.longitude is None:
+            return jsonify({'error': 'Ce waypoint n\'a pas de coordonnées valides'}), 400
+
+        auth_service = get_auth_service()
+        if not auth_service.is_logged_in():
+            return jsonify({'error': 'Non connecté à Geocaching.com — configurez l\'authentification'}), 401
+
+        client = GeocachingPushCoordinatesClient()
+        result = client.push_corrected_coordinates(
+            gc_code=geocache.gc_code,
+            latitude=waypoint.latitude,
+            longitude=waypoint.longitude,
+        )
+
+        if not result.get('ok'):
+            error_msg = result.get('error') or result.get('body') or 'Erreur inconnue'
+            logger.error(f"Push waypoint coords failed for {geocache.gc_code} wp={waypoint_id}: {error_msg}")
+            status_code = result.get('status', 500)
+            if status_code in (401, 403):
+                return jsonify({'error': error_msg}), 401
+            return jsonify({'error': error_msg}), 502
+
+        coords_display = waypoint.gc_coords or f"{waypoint.latitude:.6f}, {waypoint.longitude:.6f}"
+        logger.info(f"Waypoint {waypoint_id} coordinates pushed to Geocaching.com for {geocache.gc_code}")
+        return jsonify({
+            'success': True,
+            'message': f'Coordonnées du waypoint envoyées vers Geocaching.com ({geocache.gc_code})',
+            'gc_code': geocache.gc_code,
+            'waypoint_id': waypoint_id,
+            'waypoint_name': waypoint.name,
+            'latitude': waypoint.latitude,
+            'longitude': waypoint.longitude,
+            'coordinates_display': coords_display,
+        })
+
+    except Exception as e:
+        logger.error(f"Error pushing waypoint coordinates for geocache {geocache_id} wp={waypoint_id}: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.delete('/api/geocaches/<int:geocache_id>/push-corrected-coordinates')
+def delete_corrected_coordinates_on_gc(geocache_id: int):
+    """
+    Supprime les coordonnées corrigées sur Geocaching.com (remet les coords originales).
+
+    Returns:
+        200 {'success': True}
+        401 si non connecté
+        404 si geocache introuvable
+        502 si l'API Geocaching.com renvoie une erreur
+    """
+    try:
+        from ..services.geocaching_push_coordinates import GeocachingPushCoordinatesClient
+        from ..services.geocaching_auth import get_auth_service
+
+        geocache = Geocache.query.get(geocache_id)
+        if not geocache:
+            return jsonify({'error': 'Geocache not found'}), 404
+
+        if not geocache.gc_code:
+            return jsonify({'error': 'Code GC manquant pour cette géocache'}), 400
+
+        auth_service = get_auth_service()
+        if not auth_service.is_logged_in():
+            return jsonify({'error': 'Non connecté à Geocaching.com — configurez l\'authentification'}), 401
+
+        client = GeocachingPushCoordinatesClient()
+        result = client.delete_corrected_coordinates(gc_code=geocache.gc_code)
+
+        if not result.get('ok'):
+            error_msg = result.get('error') or result.get('body') or 'Erreur inconnue'
+            logger.error(f"Delete corrected coords failed for {geocache.gc_code}: {error_msg}")
+            status_code = result.get('status', 500)
+            if status_code in (401, 403):
+                return jsonify({'error': error_msg}), 401
+            return jsonify({'error': error_msg}), 502
+
+        logger.info(f"Corrected coordinates deleted on Geocaching.com for {geocache.gc_code}")
+        return jsonify({
+            'success': True,
+            'message': f'Coordonnées corrigées supprimées sur Geocaching.com ({geocache.gc_code})',
+        })
+
+    except Exception as e:
+        logger.error(f"Error deleting corrected coordinates for geocache {geocache_id}: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
 @bp.put('/api/geocaches/<int:geocache_id>/solved-status')
 def update_solved_status(geocache_id: int):
     """
