@@ -169,6 +169,138 @@ class TestScoringEndpoint:
         assert data['score'] > 0.2
 
 
+class TestScoringNumberRichness:
+    """Tests for the number_richness and encoded_pattern features."""
+
+    def test_number_words_fr_without_direction_scores_high(self, client):
+        """Number words like 'vingt deux point quatre cent dix sept' should score high
+        even without N/S/E/W direction signals."""
+        response = client.post(
+            '/api/plugins/score',
+            data=json.dumps({
+                'text': 'vingt deux point quatre cent dix sept'
+            }),
+            content_type='application/json'
+        )
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        features = data['metadata']['scoring']['features']
+
+        assert features['number_richness'] > 0.5
+        assert data['score'] > 0.7
+
+    def test_number_words_en_without_direction_scores_high(self, client):
+        """English number words should also score high."""
+        response = client.post(
+            '/api/plugins/score',
+            data=json.dumps({
+                'text': 'twenty two point four hundred seventeen'
+            }),
+            content_type='application/json'
+        )
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        features = data['metadata']['scoring']['features']
+
+        assert features['number_richness'] > 0.5
+        assert data['score'] > 0.7
+
+    def test_hex_pairs_penalized_as_encoded(self, client):
+        """Hex pair output like '76 69 6E 67 74 20...' should be heavily penalized."""
+        response = client.post(
+            '/api/plugins/score',
+            data=json.dumps({
+                'text': '76 69 6E 67 74 20 64 65 75 78 20 70 6N 69 6E 74 20 71 75 61 74 72 65 20 63 65 6E 74 20 64 69 78 20 78 65 70 74'
+            }),
+            content_type='application/json'
+        )
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        features = data['metadata']['scoring']['features']
+
+        assert features['encoded_penalty'] < 0.2
+        assert data['score'] < 0.1
+
+    def test_base64_penalized_as_encoded(self, client):
+        """Base64-like strings should be penalized."""
+        response = client.post(
+            '/api/plugins/score',
+            data=json.dumps({
+                'text': 'SGVsbG8gV29ybGQhIFRoaXMgaXMgYSB0ZXN0'
+            }),
+            content_type='application/json'
+        )
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        features = data['metadata']['scoring']['features']
+
+        assert features['encoded_penalty'] <= 0.1
+        assert data['score'] < 0.2
+
+    def test_numeric_codes_penalized(self, client):
+        """Sequences of short numeric codes separated by spaces should be penalized."""
+        response = client.post(
+            '/api/plugins/score',
+            data=json.dumps({
+                'text': '12 34 56 78 90 12 34 56 78 90'
+            }),
+            content_type='application/json'
+        )
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['score'] < 0.15
+
+    def test_number_richness_feature_present_in_metadata(self, client):
+        """number_richness and encoded_penalty should appear in scoring features."""
+        response = client.post(
+            '/api/plugins/score',
+            data=json.dumps({
+                'text': 'vingt deux point quatre cent dix sept'
+            }),
+            content_type='application/json'
+        )
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        features = data['metadata']['scoring']['features']
+
+        assert 'number_richness' in features
+        assert 'encoded_penalty' in features
+
+    def test_coord_words_relaxation_with_separator(self, client):
+        """coord_words should give partial credit for number words + separator
+        even without direction signals."""
+        response = client.post(
+            '/api/plugins/score',
+            data=json.dumps({
+                'text': 'quarante huit virgule cinq cent douze'
+            }),
+            content_type='application/json'
+        )
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        features = data['metadata']['scoring']['features']
+
+        # coord_words should have partial credit via the relaxation path
+        assert features['coord_words'] > 0.0
+
+    def test_noise_with_binary_still_low(self, client):
+        """Binary-like noise should not trigger number_richness."""
+        response = client.post(
+            '/api/plugins/score',
+            data=json.dumps({
+                'text': 'XJ12! FS QLM 0001110101010101'
+            }),
+            content_type='application/json'
+        )
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        features = data['metadata']['scoring']['features']
+
+        assert features['number_richness'] == 0.0
+        assert data['score'] <= 0.2
+
+
 class TestScoringIntegrationExecute:
     def test_execute_overwrites_confidence_and_keeps_plugin_confidence(self, client, caesar_plugin):
         plugins_dir = Path(__file__).parent.parent / 'plugins'

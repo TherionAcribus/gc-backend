@@ -33,6 +33,17 @@ _RE_GPS_DMS = re.compile(r'\d+\s*[°º]\s*\d+\s*[\'\u2032\u2019]\s*\d')
 _RE_GPS_DECIMAL = re.compile(r'-?\d{1,3}\.\d{3,}[\s,]+-?\d{1,3}\.\d{3,}')
 _RE_GPS_COMPACT = re.compile(r'\b[3-5]\d{6}\s+[0-3]\d{5,7}\b')
 
+# Patterns for detecting still-encoded output (hex pairs, numeric codes)
+_RE_HEX_PAIRS = re.compile(r'(?:[0-9A-Fa-f]{2}\s){4,}')
+_RE_NUMERIC_CODED = re.compile(r'(?:\d{1,3}\s){5,}')
+_RE_BASE64_LIKE = re.compile(r'^[A-Za-z0-9+/=]{20,}$')
+
+# Separators that indicate numeric structure (point, virgule, etc.) for number_richness
+_NR_SEPARATORS = frozenset({
+    'point', 'dot', 'comma', 'virgule', 'komma', 'punto', 'ponto', 'przecinek',
+    'et', 'and', 'und',
+})
+
 
 def _normalize_basic(text: str) -> str:
     text = unicodedata.normalize('NFKC', text or '')
@@ -354,12 +365,26 @@ def _coord_words_feature(text: str, lang: str) -> float:
 
     has_dir = any(t in _CW_DIRECTIONS for t in tokens)
     has_latlon = any(t in _CW_LATLON for t in tokens)
+
+    num_hits = sum(1 for t in tokens if _looks_like_number_word(t, lang))
+
+    # ── Relaxation: partial credit without direction if strong number + separator ──
+    # Texts like "vingt deux point quatre cent dix sept" have no direction but
+    # are very valuable in geocaching (coordinate fragments written as words).
     if not (has_dir or has_latlon):
+        if num_hits >= 3:
+            has_sep = any(t in _NR_SEPARATORS for t in tokens)
+            if has_sep:
+                # Strong signal: many number words + a separator like "point"/"virgule"
+                num_ratio_relaxed = min(1.0, num_hits / 8.0)
+                return float(min(0.7, 0.35 + 0.35 * num_ratio_relaxed))
+            elif num_hits >= 5:
+                # Weaker signal: lots of number words without separator
+                num_ratio_relaxed = min(1.0, num_hits / 10.0)
+                return float(min(0.5, 0.25 + 0.25 * num_ratio_relaxed))
         return 0.0
 
     has_unit = any(t in _CW_UNITS for t in tokens)
-
-    num_hits = sum(1 for t in tokens if _looks_like_number_word(t, lang))
 
     # Sans unités explicites (ex: "N 48 33 787 E 006 38 803"), le GPS strict couvre déjà.
     # Ici on accepte quand même un signal si on a assez de nombres/nombres-en-mots.
@@ -370,6 +395,105 @@ def _coord_words_feature(text: str, lang: str) -> float:
     num_ratio = min(1.0, num_hits / 10.0)
     base = 0.6 if has_unit else 0.45
     return float(min(1.0, base + 0.4 * num_ratio))
+
+
+# ── Encoded-pattern penalty ──────────────────────────────────────────────
+def _encoded_pattern_penalty(text: str) -> float:
+    """Detect still-encoded output (hex pairs, numeric codes, base64).
+
+    Returns a penalty factor in [0..1]:
+      - 1.0 = text looks clean (no encoded patterns)
+      - 0.0 = text looks entirely encoded (hex/numeric/base64)
+
+    This catches outputs where a cipher plugin barely transformed the input,
+    leaving hex pairs like ``76 69 6E 67 74`` or numeric codes like ``12 34 56``.
+    """
+    if not text or len(text) < 8:
+        return 1.0
+
+    stripped = text.strip()
+    total_len = len(stripped)
+
+    # Base64-like: single long block of base64 chars
+    if _RE_BASE64_LIKE.match(stripped):
+        return 0.1
+
+    # Hex pairs: "6E 67 74 20 64 65"
+    hex_matches = _RE_HEX_PAIRS.findall(stripped)
+    hex_coverage = sum(len(m) for m in hex_matches) / max(1, total_len) if hex_matches else 0.0
+    if hex_coverage > 0.6:
+        return 0.05
+    if hex_coverage > 0.3:
+        return 0.2
+
+    # Numeric coded: "76 69 6 67 74" (sequences of short numbers separated by spaces)
+    num_matches = _RE_NUMERIC_CODED.findall(stripped)
+    num_coverage = sum(len(m) for m in num_matches) / max(1, total_len) if num_matches else 0.0
+    if num_coverage > 0.6:
+        return 0.15
+    if num_coverage > 0.3:
+        return 0.35
+
+    return 1.0
+
+
+# ── Number richness feature ─────────────────────────────────────────────
+def _number_richness_feature(text: str, lang: str) -> float:
+    """Detect text rich in number words or digits, even without coordinate markers.
+
+    In geocaching, decoded text containing number words (e.g. "vingt deux point
+    quatre cent dix sept") or digit sequences is extremely valuable — it likely
+    represents coordinate components, puzzle answers, or other numeric data.
+
+    Returns a float in [0..1]:
+      - 0.0 = no significant number content
+      - 1.0 = text is predominantly numbers/number-words
+
+    This feature is intentionally INDEPENDENT of direction signals (N/S/E/W)
+    and coordinate units.  It complements ``_coord_words_feature`` which
+    requires direction context.
+    """
+    raw_tokens = _tokenize_words(text)
+    if not raw_tokens or len(raw_tokens) < 2:
+        return 0.0
+
+    def norm_token(t: str) -> str:
+        s = unicodedata.normalize('NFKD', t)
+        s = ''.join(ch for ch in s if not unicodedata.combining(ch))
+        return s.lower()
+
+    tokens = [norm_token(t) for t in raw_tokens]
+
+    num_count = 0
+    sep_count = 0
+    for t in tokens:
+        if t in _CW_NUMBER_WORDS:
+            # Actual number word from dictionary — always counts
+            num_count += 1
+        elif t.isdigit():
+            # Pure digit token: only count if it's a reasonable number (1-5 digits)
+            # and not binary-like (only 0s and 1s with length > 4)
+            if len(t) <= 5 and not (len(t) > 4 and set(t) <= {'0', '1'}):
+                num_count += 1
+        elif t in _NR_SEPARATORS:
+            sep_count += 1
+        # Skip mixed alphanumeric tokens (e.g. "6E", "XJ12") — not meaningful numbers
+
+    if num_count < 2:
+        return 0.0
+
+    # Ratio of number-related tokens (number words + separators) vs total
+    relevant = num_count + sep_count
+    ratio = relevant / len(tokens)
+
+    # A separator among numbers is a strong signal (e.g. "vingt deux point quatre")
+    sep_bonus = min(0.15, sep_count * 0.08) if sep_count > 0 else 0.0
+
+    # Scale: 2 number hits → ~0.15, 4 → ~0.35, 6+ → ~0.55+, with ratio boost
+    density = min(1.0, num_count / 8.0)
+    richness = density * 0.55 + ratio * 0.35 + sep_bonus
+
+    return float(min(1.0, richness))
 
 
 @dataclass(frozen=True)
@@ -397,11 +521,13 @@ def _compute_score(text: str, context: Optional[Dict[str, Any]] = None) -> Score
     quadgram_fitness = _quadgram_fitness(text, langid.language)
     repetition_quality = _repetition_quality(text)
     coord_words = _coord_words_feature(text, langid.language)
+    encoded_penalty = _encoded_pattern_penalty(text)
+    number_richness = _number_richness_feature(text, langid.language)
 
     ngram_fitness = float(min(1.0, trigram_fitness * 0.5 + quadgram_fitness * 0.7))
     ngram_fitness *= repetition_quality
 
-    if ic < 0.038 and gps_conf < 0.7 and coord_words < 0.3:
+    if ic < 0.038 and gps_conf < 0.7 and coord_words < 0.3 and number_richness < 0.2:
         return ScoreResult(
             score=0.0,
             metadata={
@@ -419,6 +545,8 @@ def _compute_score(text: str, context: Optional[Dict[str, Any]] = None) -> Score
                         'quadgram_fitness': quadgram_fitness,
                         'repetition_quality': repetition_quality,
                         'coord_words': coord_words,
+                        'encoded_penalty': encoded_penalty,
+                        'number_richness': number_richness,
                         'lexical_coverage': lexical,
                         'coherence': coherence,
                     },
@@ -429,9 +557,10 @@ def _compute_score(text: str, context: Optional[Dict[str, Any]] = None) -> Score
 
     weights = {
         'gps_confidence': 0.80,
-        'ngram_fitness': 0.45,
-        'lexical_coverage': 0.35,
+        'ngram_fitness': 0.40,
+        'lexical_coverage': 0.30,
         'coord_words': 0.35,
+        'number_richness': 0.45,
         'coherence': 0.20,
         'ic_quality': 0.15,
         'repetition_quality': 0.10,
@@ -448,13 +577,21 @@ def _compute_score(text: str, context: Optional[Dict[str, Any]] = None) -> Score
             + ngram_fitness * weights['ngram_fitness']
             + repetition_quality * weights['repetition_quality']
             + coord_words * weights['coord_words']
+            + number_richness * weights['number_richness']
             + coherence * weights['coherence']
             + ic_v * weights['ic_quality']
             + entropy_v * weights['entropy_quality']
         )
         early_exit = None
 
-        if gps_conf <= 0.0 and ngram_fitness < 0.1 and coord_words < 0.2:
+        # Apply encoded-pattern penalty as a multiplicative factor
+        # This heavily penalizes outputs that still look like hex/base64/numeric codes
+        if encoded_penalty < 1.0:
+            score *= encoded_penalty
+            if encoded_penalty < 0.2:
+                early_exit = 'encoded_pattern'
+
+        if gps_conf <= 0.0 and ngram_fitness < 0.1 and coord_words < 0.2 and number_richness < 0.15:
             score = 0.05
             early_exit = 'ngram_low'
 
@@ -470,6 +607,10 @@ def _compute_score(text: str, context: Optional[Dict[str, Any]] = None) -> Score
         explanation.append(f"lang={langid.language} ({langid.confidence:.2f})")
     explanation.append(f"lex={lexical:.2f}")
     explanation.append(f"coh={coherence:.2f}")
+    if number_richness > 0:
+        explanation.append(f"num_rich={number_richness:.2f}")
+    if encoded_penalty < 1.0:
+        explanation.append(f"enc_pen={encoded_penalty:.2f}")
 
     return ScoreResult(
         score=float(score),
@@ -491,6 +632,8 @@ def _compute_score(text: str, context: Optional[Dict[str, Any]] = None) -> Score
                     'quadgram_fitness': float(quadgram_fitness),
                     'repetition_quality': float(repetition_quality),
                     'coord_words': float(coord_words),
+                    'encoded_penalty': float(encoded_penalty),
+                    'number_richness': float(number_richness),
                     'lexical_coverage': float(lexical),
                     'coherence': float(coherence),
                     'ic_quality': float(ic_v),
@@ -643,15 +786,43 @@ def score_text_fast(text: str) -> float:
 
     Returns a float 0..1.  Much faster than score_text() because it skips
     GPS detection, language detection, lexical features, and coord_words.
-    Uses only: IC, repetition quality, and quadgram fitness (EN fallback).
+    Uses only: IC, repetition quality, quadgram fitness (EN fallback),
+    encoded-pattern penalty, and a lightweight number-word boost.
 
     Typical cost: ~0.05 ms per call vs ~1-5 ms for full score_text().
     Results are LRU-cached (4096 entries) keyed by normalised letters.
     """
+    # Early penalty for still-encoded output (hex pairs, base64, etc.)
+    enc_pen = _encoded_pattern_penalty(text)
+    if enc_pen < 0.1:
+        return 0.0
+
     letters = _normalize_for_stats(text)
     if len(letters) < 4:
+        # Very few letters — check if the text is rich in number words
+        # (e.g. "vingt deux point quatre cent dix sept" has many letters
+        #  but some decoded outputs are short). If letters < 4, the
+        #  quadgram path can't help, but number richness might.
+        nr = _number_richness_feature(text, 'fr')
+        if nr > 0.3:
+            return float(min(0.5, nr * enc_pen))
         return 0.0
-    return _score_text_fast_cached(letters)
+
+    base_score = _score_text_fast_cached(letters)
+
+    # Apply encoded-pattern penalty
+    if enc_pen < 1.0:
+        base_score *= enc_pen
+
+    # Lightweight number-word boost: if quadgrams gave a decent score AND
+    # the text is rich in number words, nudge the score up so the full
+    # scorer gets a chance to evaluate it properly.
+    if base_score > 0.05:
+        nr = _number_richness_feature(text, 'fr')
+        if nr > 0.2:
+            base_score = min(1.0, base_score + nr * 0.15)
+
+    return float(base_score)
 
 
 def score_and_rank_results(
