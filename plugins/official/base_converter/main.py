@@ -23,7 +23,7 @@ class BaseConverterPlugin:
 
     def __init__(self) -> None:
         self.name = "base_converter"
-        self.version = "1.6.0"
+        self.version = "1.7.0"
 
         self._base_chars: Dict[str, str] = {
             "2": "01",
@@ -105,7 +105,7 @@ class BaseConverterPlugin:
         if not check["is_match"]:
             return self._error_response(f"La valeur fournie n'est pas valide dans la base {source_base}.", start_time)
 
-        if embedded:
+        if embedded or len(check["fragments"]) > 1:
             converted_text = self._decode_fragments(text, fragments=check["fragments"], source_base=source_base, target_base=target_base)
             return {
                 "status": "ok",
@@ -156,19 +156,16 @@ class BaseConverterPlugin:
             if not re.match(pattern_str, text):
                 return {"is_match": False, "fragments": [], "score": 0.0}
 
-            # Retirer séparateurs et vérifier qu'il reste du contenu.
-            stripped = re.sub(f"[{esc_punct}]", "", text)
-            if not stripped:
+            fragments = self._extract_base_fragments(text, valid_chars=valid_chars, allowed_chars=allowed_chars)
+            if not fragments:
                 return {"is_match": False, "fragments": [], "score": 0.0}
 
-            # Vérification supplémentaire base64: longueur multiple de 4 (après retrait séparateurs).
             if base == "64":
-                stripped_no_ws = re.sub(f"[{esc_punct}]", "", text)
-                if stripped_no_ws and (len(stripped_no_ws) % 4 != 0):
-                    return {"is_match": False, "fragments": [], "score": 0.0}
+                for frag in fragments:
+                    if len(frag["value"]) % 4 != 0:
+                        return {"is_match": False, "fragments": [], "score": 0.0}
 
-            start = text.find(stripped)
-            return {"is_match": True, "fragments": [{"value": stripped, "start": start, "end": start + len(stripped)}], "score": 1.0}
+            return {"is_match": True, "fragments": fragments, "score": 1.0}
 
         # smooth or embedded strict: extraire des fragments.
         fragments = self._extract_base_fragments(text, valid_chars=valid_chars, allowed_chars=allowed_chars)
