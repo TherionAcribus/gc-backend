@@ -1,0 +1,26 @@
+{
+  "name": "Code couleur résistances",
+  "description": "Bagues de couleurs pour coder les chiffres, multiplicateurs et tolérances des résistances.",
+  "type": "alphabet",
+  "category": "electronics",
+  "version": "1.0.0",
+  "tags": ["électronique", "résistance", "code couleur", "ohm"],
+  "sources": [
+    {
+      "type": "reference",
+      "label": "Wikipedia - Code des couleurs des résistances",
+      "url": "https://fr.wikipedia.org/wiki/Code_des_couleurs_des_r%C3%A9sistances"
+    }
+  ],
+  "alphabetConfig": {
+    "type": "images",
+    "imageFormat": "svg",
+    "imageDir": "images",
+    "hasUpperCase": false,
+    "characters": {
+      "letters": [],
+      "numbers": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+      "special": {}
+    }
+  }
+}
