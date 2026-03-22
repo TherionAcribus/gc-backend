@@ -1929,8 +1929,13 @@ def update_coordinates(geocache_id: int):
         # Parse les coordonnées pour calculer lat/lon
         def parse_gc_coordinates(coords_text: str):
             try:
+                # Nettoyer les apostrophes qui peuvent rester
+                coords_text = coords_text.replace("'", "").replace("'", "").replace("ʼ", "").replace("′", "")
+                logger.info(f"Parsing coordinates: '{coords_text}'")
                 parts = coords_text.split()
+                logger.info(f"Parts: {parts}")
                 if len(parts) < 6:
+                    logger.warning(f"Not enough parts: {len(parts)}")
                     return None, None
                 lat_dir = parts[0].upper()
                 lat_deg = float(parts[1].replace('°', ''))
