@@ -10,11 +10,15 @@ Ce module expose les routes REST pour :
 - Redéclencher la découverte de plugins
 """
 
-import uuid
+import json
+import re
 import threading
 import time
+import uuid
+from collections import Counter
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from flask import Blueprint, jsonify, request, render_template_string, current_app
 from loguru import logger
 from typing import Dict, Any, List, Optional
@@ -48,6 +52,286 @@ def init_plugin_manager(manager: PluginManager):
 
 # Stockage des tâches batch en mémoire (en production, utiliser Redis ou une base de données)
 batch_tasks: Dict[str, 'BatchPluginTask'] = {}
+
+
+def _load_metasolver_presets(manager: PluginManager) -> Dict[str, Any]:
+    presets_path = Path(manager.plugins_dir) / 'official' / 'metasolver' / 'presets.json'
+    try:
+        with presets_path.open('r', encoding='utf-8') as handle:
+            return json.load(handle).get('presets') or {}
+    except Exception:
+        return {}
+
+
+def _matches_metasolver_filter(metasolver_meta: Dict[str, Any], preset_filter: Optional[Dict[str, Any]]) -> bool:
+    if not preset_filter:
+        return True
+
+    filter_tags = preset_filter.get('tags')
+    if filter_tags:
+        plugin_tags = set(metasolver_meta.get('tags') or [])
+        if not plugin_tags.intersection(filter_tags):
+            return False
+
+    filter_charsets = preset_filter.get('input_charset')
+    if filter_charsets:
+        plugin_charset = metasolver_meta.get('input_charset', '')
+        if plugin_charset not in filter_charsets:
+            return False
+
+    return True
+
+
+def _collect_metasolver_candidates(
+    *,
+    preset_filter: Optional[Dict[str, Any]] = None,
+    mode: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    from ..plugins.models import Plugin as PluginModel
+
+    all_plugins = PluginModel.query.filter_by(enabled=True).all()
+    candidates: List[Dict[str, Any]] = []
+
+    for plugin in all_plugins:
+        try:
+            metadata = json.loads(plugin.metadata_json) if plugin.metadata_json else {}
+        except Exception:
+            continue
+
+        metasolver_meta = metadata.get('metasolver') or {}
+        if not metasolver_meta.get('eligible'):
+            continue
+
+        capabilities = metadata.get('capabilities') or {}
+        if mode == 'detect' and not capabilities.get('analyze'):
+            continue
+        if mode == 'decode' and not capabilities.get('decode'):
+            continue
+
+        if not _matches_metasolver_filter(metasolver_meta, preset_filter):
+            continue
+
+        priority = metasolver_meta.get('priority', 50)
+        try:
+            priority = int(priority)
+        except Exception:
+            priority = 50
+
+        candidates.append({
+            'name': plugin.name,
+            'description': plugin.description or '',
+            'input_charset': metasolver_meta.get('input_charset') or '',
+            'tags': list(metasolver_meta.get('tags') or []),
+            'priority': priority,
+            'capabilities': capabilities,
+        })
+
+    candidates.sort(key=lambda item: (-item['priority'], item['name']))
+    return candidates
+
+
+def _detect_dominant_input_kind(letter_count: int, digit_count: int, symbol_count: int, word_count: int) -> str:
+    present = [name for name, value in (
+        ('letters', letter_count),
+        ('digits', digit_count),
+        ('symbols', symbol_count),
+    ) if value > 0]
+
+    if not present:
+        return 'empty'
+    if len(present) == 1 and present[0] == 'letters' and word_count >= 2:
+        return 'words'
+    if len(present) == 1:
+        return present[0]
+    return 'mixed'
+
+
+def _analyze_metasolver_signature(text: str) -> Dict[str, Any]:
+    raw_text = text or ''
+    trimmed = raw_text.strip()
+    non_space = [char for char in trimmed if not char.isspace()]
+    compact = ''.join(non_space)
+    compact_upper = compact.upper()
+    tokens = [token for token in re.split(r'\s+', trimmed) if token]
+
+    letter_count = sum(1 for char in non_space if char.isalpha())
+    digit_count = sum(1 for char in non_space if char.isdigit())
+    symbol_count = sum(1 for char in non_space if not char.isalnum())
+    whitespace_count = sum(1 for char in trimmed if char.isspace())
+    total_non_space = len(non_space)
+
+    charsets_present = [name for name, value in (
+        ('letters', letter_count),
+        ('digits', digit_count),
+        ('symbols', symbol_count),
+    ) if value > 0]
+
+    word_count = len([token for token in tokens if re.search(r'[A-Za-zÀ-ÿ]', token)])
+    average_token_length = (
+        round(sum(len(token) for token in tokens) / len(tokens), 2)
+        if tokens else 0.0
+    )
+    separators = sorted({char for char in trimmed if not char.isalnum() and not char.isspace()})
+
+    binary_candidate = re.sub(r'[\s|,;:_/-]+', '', trimmed)
+    hex_candidate = re.sub(r'[\s|,;:_/-]+', '', compact_upper)
+    digit_candidate = re.sub(r'\D', '', trimmed)
+
+    looks_like_morse = bool(compact) and set(compact) <= set('.-/|') and any(char in compact for char in '.-')
+    looks_like_binary = bool(binary_candidate) and len(binary_candidate) >= 6 and set(binary_candidate) <= set('01')
+    looks_like_hex = (
+        bool(hex_candidate)
+        and len(hex_candidate) >= 4
+        and set(hex_candidate) <= set('0123456789ABCDEF')
+        and any(char in 'ABCDEF' for char in hex_candidate)
+    )
+    looks_like_phone_keypad = bool(digit_candidate) and len(digit_candidate) >= 4 and set(digit_candidate) <= set('23456789')
+    looks_like_roman = (
+        bool(compact_upper)
+        and letter_count > 0
+        and digit_count == 0
+        and symbol_count == 0
+        and set(compact_upper) <= set('IVXLCDM')
+        and len(compact_upper) >= 2
+    )
+    looks_like_decimal_sequence = digit_count > 0 and letter_count == 0 and len(tokens) >= 2
+    looks_like_coordinate_fragment = bool(re.search(r'[NSEW]\s*\d|[0-9]+\s*[°º]|[0-9]+[.,][0-9]+', trimmed, re.IGNORECASE))
+
+    dominant_input_kind = _detect_dominant_input_kind(letter_count, digit_count, symbol_count, word_count)
+
+    if looks_like_morse:
+        suggested_preset = 'symbols_only'
+    elif dominant_input_kind == 'digits':
+        suggested_preset = 'digits_only'
+    elif dominant_input_kind == 'symbols':
+        suggested_preset = 'symbols_only'
+    elif dominant_input_kind == 'words':
+        suggested_preset = 'words_only'
+    elif dominant_input_kind == 'letters':
+        suggested_preset = 'letters_only'
+    else:
+        suggested_preset = 'frequent'
+
+    return {
+        'raw_length': len(raw_text),
+        'trimmed_length': len(trimmed),
+        'non_space_length': total_non_space,
+        'letter_count': letter_count,
+        'digit_count': digit_count,
+        'symbol_count': symbol_count,
+        'whitespace_count': whitespace_count,
+        'word_count': word_count,
+        'group_count': len(tokens),
+        'average_group_length': average_token_length,
+        'charsets_present': charsets_present,
+        'dominant_input_kind': dominant_input_kind,
+        'separators': separators,
+        'looks_like_morse': looks_like_morse,
+        'looks_like_binary': looks_like_binary,
+        'looks_like_hex': looks_like_hex,
+        'looks_like_phone_keypad': looks_like_phone_keypad,
+        'looks_like_roman_numerals': looks_like_roman,
+        'looks_like_decimal_sequence': looks_like_decimal_sequence,
+        'looks_like_coordinate_fragment': looks_like_coordinate_fragment,
+        'suggested_preset': suggested_preset,
+    }
+
+
+def _candidate_name_matches(candidate: Dict[str, Any], *fragments: str) -> bool:
+    name = (candidate.get('name') or '').lower()
+    description = (candidate.get('description') or '').lower()
+    return any(fragment in name or fragment in description for fragment in fragments)
+
+
+def _score_metasolver_candidate(candidate: Dict[str, Any], signature: Dict[str, Any]) -> Dict[str, Any]:
+    score = float(candidate.get('priority', 50))
+    reasons: List[str] = []
+
+    candidate_charset = candidate.get('input_charset') or ''
+    dominant_kind = signature.get('dominant_input_kind')
+    charsets_present = set(signature.get('charsets_present') or [])
+    tags = set(candidate.get('tags') or [])
+
+    if candidate_charset == dominant_kind:
+        score += 40
+        reasons.append(f"Correspondance directe avec l'entrée {dominant_kind}")
+    elif dominant_kind == 'mixed' and candidate_charset in charsets_present:
+        score += 18
+        reasons.append(f"Compatible avec une entrée mixte contenant {candidate_charset}")
+    elif dominant_kind == 'words' and candidate_charset == 'letters':
+        score += 15
+        reasons.append("Compatible avec un texte composé de mots")
+    elif candidate_charset and dominant_kind not in ('mixed', 'empty'):
+        score -= 10
+
+    if dominant_kind in ('letters', 'words') and 'substitution' in tags:
+        score += 12
+        reasons.append("Tag substitution cohérent avec une entrée textuelle")
+
+    if dominant_kind == 'digits' and 'numeral' in tags:
+        score += 20
+        reasons.append("Tag numeral cohérent avec une entrée numérique")
+
+    if signature.get('looks_like_morse'):
+        if _candidate_name_matches(candidate, 'morse'):
+            score += 150
+            reasons.append("Le texte ressemble fortement à du Morse")
+        elif candidate_charset == 'symbols':
+            score += 12
+
+    if signature.get('looks_like_binary'):
+        if _candidate_name_matches(candidate, 'base', 'binary'):
+            score += 100
+            reasons.append("Le texte ressemble à une séquence binaire")
+        elif 'numeral' in tags:
+            score += 20
+
+    if signature.get('looks_like_hex'):
+        if _candidate_name_matches(candidate, 'base', 'hex'):
+            score += 90
+            reasons.append("Le texte ressemble à une séquence hexadécimale")
+        elif 'numeral' in tags:
+            score += 20
+
+    if signature.get('looks_like_phone_keypad') and _candidate_name_matches(candidate, 't9', 'phone', 'keypad'):
+        score += 120
+        reasons.append("Le texte ressemble à une saisie type T9")
+
+    if signature.get('looks_like_roman_numerals') and _candidate_name_matches(candidate, 'roman'):
+        score += 120
+        reasons.append("Le texte ressemble à des chiffres romains")
+
+    if signature.get('looks_like_decimal_sequence') and candidate_charset == 'digits':
+        score += 15
+        reasons.append("Entrée découpée en groupes numériques")
+
+    if signature.get('looks_like_coordinate_fragment') and _candidate_name_matches(candidate, 'coord', 'gps'):
+        score += 60
+        reasons.append("Le texte ressemble à un fragment de coordonnées")
+
+    if 'frequent' in tags:
+        score += 8
+        reasons.append("Code fréquent en géocaching")
+
+    if 'no_key' in tags:
+        score += 5
+        reasons.append("Ne nécessite pas de clé explicite")
+
+    return {
+        **candidate,
+        'score': round(score, 2),
+        'reasons': reasons,
+    }
+
+
+def _normalize_max_plugins(value: Any, default: int = 8) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed <= 0:
+        return default
+    return parsed
 
 
 class BatchPluginTask:
@@ -581,63 +865,13 @@ def metasolver_eligible_plugins():
         GET /api/plugins/metasolver/eligible
         GET /api/plugins/metasolver/eligible?preset=frequent
     """
-    import json as _json
-    from pathlib import Path as _Path
-
     try:
         manager = get_plugin_manager()
         preset_name = (request.args.get('preset') or 'all').lower()
-
-        # Charger les presets
-        presets_path = _Path(manager.plugins_dir) / 'official' / 'metasolver' / 'presets.json'
-        presets = {}
-        try:
-            with presets_path.open('r', encoding='utf-8') as f:
-                presets = _json.load(f).get('presets', {})
-        except Exception:
-            pass
-
+        presets = _load_metasolver_presets(manager)
         preset_info = presets.get(preset_name, {})
         preset_filter = preset_info.get('filter', {})
-
-        # Lister tous les plugins activés avec métadonnées
-        from ..plugins.models import Plugin as PluginModel
-        all_plugins = PluginModel.query.filter_by(enabled=True).all()
-
-        eligible = []
-        for plugin in all_plugins:
-            try:
-                metadata = _json.loads(plugin.metadata_json) if plugin.metadata_json else {}
-            except Exception:
-                continue
-
-            ms = metadata.get('metasolver') or {}
-            if not ms.get('eligible'):
-                continue
-
-            # Appliquer le filtre du preset
-            if preset_filter:
-                filter_tags = preset_filter.get('tags')
-                if filter_tags:
-                    plugin_tags = set(ms.get('tags') or [])
-                    if not plugin_tags.intersection(filter_tags):
-                        continue
-
-                filter_charsets = preset_filter.get('input_charset')
-                if filter_charsets:
-                    if ms.get('input_charset', '') not in filter_charsets:
-                        continue
-
-            eligible.append({
-                'name': plugin.name,
-                'description': plugin.description,
-                'input_charset': ms.get('input_charset'),
-                'tags': ms.get('tags', []),
-                'priority': ms.get('priority', 50),
-            })
-
-        # Trier par priorité décroissante
-        eligible.sort(key=lambda p: (-p['priority'], p['name']))
+        eligible = _collect_metasolver_candidates(preset_filter=preset_filter)
 
         return jsonify({
             'preset': preset_name,
@@ -655,6 +889,106 @@ def metasolver_eligible_plugins():
         logger.error(f"Erreur listing metasolver eligible: {e}", exc_info=True)
         return jsonify({
             "error": "Erreur listing metasolver eligible",
+            "message": str(e)
+        }), 500
+
+
+@bp.route('/metasolver/recommend', methods=['POST'])
+def metasolver_recommend_plugins():
+    """
+    Analyse la signature d'entrée d'un texte et recommande une sous-liste de plugins metasolver.
+
+    Request body:
+        {
+            "text": ".... . .-.. .-.. ---",
+            "preset": "all",
+            "mode": "decode",
+            "max_plugins": 8
+        }
+    """
+    try:
+        data = request.get_json(force=True)
+    except Exception as json_error:
+        return jsonify({
+            "error": "JSON invalide",
+            "message": f"Le body doit être un JSON valide: {str(json_error)}"
+        }), 400
+
+    if not data or not isinstance(data, dict):
+        return jsonify({
+            "error": "Requête invalide",
+            "message": "Le body doit être un objet JSON"
+        }), 400
+
+    text = data.get('text')
+    if not isinstance(text, str) or not text.strip():
+        return jsonify({
+            "error": "Requête invalide",
+            "message": "Le champ 'text' (string non vide) est requis"
+        }), 400
+
+    requested_preset = (data.get('preset') or '').strip().lower()
+    mode = (data.get('mode') or 'decode').strip().lower()
+    max_plugins = _normalize_max_plugins(data.get('max_plugins'), default=8)
+
+    try:
+        manager = get_plugin_manager()
+        presets = _load_metasolver_presets(manager)
+        signature = _analyze_metasolver_signature(text)
+
+        effective_preset = requested_preset or signature.get('suggested_preset') or 'frequent'
+        if effective_preset not in presets:
+            effective_preset = 'all'
+
+        preset_info = presets.get(effective_preset, {})
+        preset_filter = preset_info.get('filter') or {}
+        candidates = _collect_metasolver_candidates(preset_filter=preset_filter, mode=mode)
+        scored = [_score_metasolver_candidate(candidate, signature) for candidate in candidates]
+        scored.sort(key=lambda item: (-item['score'], -item['priority'], item['name']))
+
+        selected = scored[:max_plugins]
+        if selected:
+            top_score = selected[0]['score'] or 1.0
+        else:
+            top_score = 1.0
+
+        recommendations = []
+        for item in selected:
+            confidence = round(min(1.0, max(0.0, item['score'] / top_score)), 3)
+            recommendations.append({
+                **item,
+                'confidence': confidence,
+            })
+
+        selected_plugins = [item['name'] for item in recommendations]
+        explanation = [
+            f"Signature dominante: {signature.get('dominant_input_kind')}",
+            f"Preset effectif: {effective_preset}",
+            f"Plugins recommandés: {len(selected_plugins)} / {len(scored)} éligibles",
+        ]
+
+        return jsonify({
+            'requested_preset': requested_preset or None,
+            'effective_preset': effective_preset,
+            'effective_preset_label': preset_info.get('label', effective_preset),
+            'preset_filter': preset_filter or None,
+            'mode': mode,
+            'max_plugins': max_plugins,
+            'signature': signature,
+            'recommendations': recommendations,
+            'selected_plugins': selected_plugins,
+            'plugin_list': ', '.join(selected_plugins),
+            'eligible_total': len(scored),
+            'available_presets': {
+                name: {'label': value.get('label', name), 'description': value.get('description', '')}
+                for name, value in presets.items()
+            },
+            'explanation': explanation,
+        }), 200
+    except Exception as e:
+        logger.error(f"Erreur recommandation metasolver: {e}", exc_info=True)
+        return jsonify({
+            "error": "Erreur recommandation metasolver",
             "message": str(e)
         }), 500
 

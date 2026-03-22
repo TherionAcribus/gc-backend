@@ -124,6 +124,67 @@ class TestPluginsListAPI:
             assert plugin['enabled'] is True
 
 
+class TestMetasolverRecommendationAPI:
+    """Tests pour les endpoints d'assistance metasolver."""
+
+    def test_list_metasolver_eligible_plugins(self, client, app, caesar_plugin):
+        response = client.get('/api/plugins/metasolver/eligible?preset=letters_only')
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['preset'] == 'letters_only'
+        assert 'plugins' in data
+        assert isinstance(data['plugins'], list)
+        assert any(plugin['name'] == 'caesar' for plugin in data['plugins'])
+
+    def test_recommend_metasolver_plugins_for_morse(self, client, app, caesar_plugin):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({
+                'text': '.... . .-.. .-.. ---',
+                'preset': 'all',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['signature']['looks_like_morse'] is True
+        assert 'morse_code' in data['selected_plugins']
+        assert data['recommendations'][0]['name'] == 'morse_code'
+
+    def test_recommend_metasolver_plugins_for_digits(self, client, app, caesar_plugin):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({
+                'text': '8 5 12 12 15',
+                'preset': 'all',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['signature']['dominant_input_kind'] == 'digits'
+        assert 'alpha_decoder' in data['selected_plugins']
+
+    def test_recommend_metasolver_plugins_requires_text(self, client, app):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({'text': '   '}),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert 'error' in data
+
+
 class TestPluginInfoAPI:
     """Tests pour l'endpoint d'informations d'un plugin."""
     
