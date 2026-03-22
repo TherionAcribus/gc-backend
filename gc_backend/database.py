@@ -93,6 +93,26 @@ def init_db(app):
             logger.error(f"SQLite migration error (geocache_waypoint): {e}")
             db.session.rollback()
 
+        try:
+            logger.info("Running lightweight SQLite migrations for solved_geocache_archive columns...")
+            existing_cols = set()
+            res = db.session.execute(text("PRAGMA table_info('solved_geocache_archive')"))
+            for row in res:
+                existing_cols.add(row[1])
+
+            to_add: dict[str, str] = {
+                'resolution_diagnostics': 'TEXT',
+            }
+
+            for col, col_type in to_add.items():
+                if col not in existing_cols:
+                    logger.info(f"Adding missing column solved_geocache_archive.{col} ({col_type})")
+                    db.session.execute(text(f"ALTER TABLE solved_geocache_archive ADD COLUMN {col} {col_type}"))
+            db.session.commit()
+        except Exception as e:
+            logger.error(f"SQLite migration error (solved_geocache_archive): {e}")
+            db.session.rollback()
+
         # Zone par défaut
         try:
             default_zone = Zone.query.filter_by(name="default").first()
@@ -105,5 +125,4 @@ def init_db(app):
         except Exception as e:
             logger.error(f"Error creating default zone: {e}")
             db.session.rollback()
-
 

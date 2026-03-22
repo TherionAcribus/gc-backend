@@ -77,6 +77,8 @@
     "eligible": true,
     "input_charset": "letters",
     "tags": ["frequent", "transposition", "no_key"],
-    "priority": 65
+    "priority": 65,
+    "family": "transposition",
+    "preferred_when": ["letters_only", "long_input"]
   }
 }

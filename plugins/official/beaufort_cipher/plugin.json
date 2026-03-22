@@ -107,6 +107,9 @@
     "eligible": true,
     "input_charset": "letters",
     "tags": ["classic", "substitution"],
-    "priority": 50
+    "priority": 50,
+    "family": "substitution",
+    "preferred_when": ["letters_only", "long_input"],
+    "requires_key": true
   }
 }

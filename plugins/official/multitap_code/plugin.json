@@ -61,6 +61,9 @@
     "eligible": true,
     "input_charset": "digits",
     "tags": ["frequent", "substitution", "no_key"],
-    "priority": 70
+    "priority": 70,
+    "family": "numeral",
+    "preferred_when": ["multitap_like", "digits_only", "grouped_input"],
+    "supports_grouped_input": true
   }
 }

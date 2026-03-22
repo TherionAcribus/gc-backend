@@ -73,6 +73,8 @@
     "eligible": true,
     "input_charset": "symbols",
     "tags": ["substitution", "no_key"],
-    "priority": 55
+    "priority": 55,
+    "family": "symbol_code",
+    "preferred_when": ["gold_bug_like", "mixed_input", "symbols_only"]
   }
 }

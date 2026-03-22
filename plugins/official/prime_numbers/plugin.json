@@ -79,6 +79,9 @@
     "eligible": true,
     "input_charset": "digits",
     "tags": ["numeral", "no_key"],
-    "priority": 60
+    "priority": 60,
+    "family": "numeral",
+    "preferred_when": ["prime_like", "digits_only", "grouped_input", "digit_groups"],
+    "supports_grouped_input": true
   }
 }

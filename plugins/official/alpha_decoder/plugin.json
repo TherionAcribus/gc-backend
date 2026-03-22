@@ -106,6 +106,9 @@
     "eligible": true,
     "input_charset": "digits",
     "tags": ["frequent", "numeral", "no_key"],
-    "priority": 80
+    "priority": 80,
+    "family": "numeral",
+    "preferred_when": ["a1z26_like", "digits_only", "digit_groups"],
+    "supports_grouped_input": true
   }
 }

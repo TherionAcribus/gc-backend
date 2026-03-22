@@ -50,6 +50,9 @@
     "eligible": true,
     "input_charset": "words",
     "tags": ["numeral", "no_key"],
-    "priority": 50
+    "priority": 50,
+    "family": "numeral",
+    "preferred_when": ["shadok_like", "words_only", "grouped_input"],
+    "supports_grouped_input": true
   }
 }

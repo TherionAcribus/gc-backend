@@ -305,6 +305,29 @@
           "maximum": 100,
           "default": 50,
           "description": "Priorité d'exécution dans le metasolver (0-100, plus élevé = exécuté en premier)"
+        },
+        "family": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$",
+          "description": "Famille logique du plugin pour le classement metasolver"
+        },
+        "preferred_when": {
+          "type": "array",
+          "description": "Liste de conditions de signature d'entrée qui favorisent ce plugin",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$"
+          }
+        },
+        "requires_key": {
+          "type": "boolean",
+          "default": false,
+          "description": "Indique si le plugin nécessite généralement une clé ou un indice supplémentaire"
+        },
+        "supports_grouped_input": {
+          "type": "boolean",
+          "default": false,
+          "description": "Indique si le plugin traite particulièrement bien les entrées segmentées en groupes"
         }
       },
       "required": ["eligible"],

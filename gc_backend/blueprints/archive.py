@@ -376,3 +376,37 @@ def update_formula_data(gc_code: str):
     except Exception as e:
         logger.error(f"Error updating formula data for {gc_code}: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
+
+
+@bp.put('/api/archive/<string:gc_code>/resolution-diagnostics')
+def update_resolution_diagnostics(gc_code: str):
+    """
+    Met a jour un snapshot compact du diagnostic de resolution pour un GC code.
+
+    Cree d'abord l'entree d'archive a partir de la geocache courante si necessaire.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        code = gc_code.strip().upper()
+        archive = ArchiveService.get_by_gc_code(code)
+        if archive is None:
+            geocache = Geocache.query.filter(Geocache.gc_code == code).first()
+            if geocache is None:
+                return jsonify({'error': 'Archive not found for this gc_code'}), 404
+
+            ArchiveService.sync_from_geocache(geocache, force=True)
+            archive = ArchiveService.get_by_gc_code(code)
+            if archive is None:
+                return jsonify({'error': 'Failed to create archive entry'}), 500
+
+        updated = ArchiveService.update_resolution_diagnostics(code, data)
+        if not updated:
+            return jsonify({'error': 'Failed to update resolution diagnostics'}), 500
+
+        return jsonify({'updated': True, 'gc_code': code})
+    except Exception as e:
+        logger.error(f"Error updating resolution diagnostics for {gc_code}: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500

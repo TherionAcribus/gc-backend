@@ -58,6 +58,8 @@
     "eligible": true,
     "input_charset": "letters",
     "tags": ["frequent", "classic", "substitution", "no_key"],
-    "priority": 90
+    "priority": 90,
+    "family": "substitution",
+    "preferred_when": ["letters_only", "short_input"]
   }
 }

@@ -254,6 +254,25 @@ class ArchiveService:
             return False
 
     @staticmethod
+    def update_resolution_diagnostics(gc_code: str, resolution_diagnostics: dict) -> bool:
+        """Met a jour le snapshot de diagnostic de resolution pour un GC code."""
+        from ..database import db
+        from .models import SolvedGeocacheArchive
+        code = gc_code.strip().upper()
+        entry = SolvedGeocacheArchive.query.filter_by(gc_code=code).first()
+        if not entry:
+            return False
+        try:
+            entry.resolution_diagnostics = json.dumps(resolution_diagnostics, ensure_ascii=False)
+            entry.updated_at = datetime.now(timezone.utc)
+            db.session.commit()
+            return True
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"ArchiveService.update_resolution_diagnostics error for {code}: {e}")
+            return False
+
+    @staticmethod
     def add_resolution_plugin(gc_code: str, plugin_name: str) -> bool:
         """Ajoute un plugin à la liste des plugins ayant contribué à la résolution."""
         from ..database import db

@@ -127,7 +127,9 @@
   "metasolver": {
     "eligible": true,
     "input_charset": "letters",
-    "tags": ["substitution", "no_key"],
-    "priority": 60
+    "tags": ["classic", "substitution", "no_key"],
+    "priority": 60,
+    "family": "substitution",
+    "preferred_when": ["letters_only", "short_input"]
   }
 }

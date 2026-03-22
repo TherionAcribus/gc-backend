@@ -68,6 +68,9 @@
     "eligible": true,
     "input_charset": "digits",
     "tags": ["frequent", "substitution", "no_key"],
-    "priority": 65
+    "priority": 65,
+    "family": "numeral",
+    "preferred_when": ["t9_like", "digits_only"],
+    "supports_grouped_input": true
   }
 }

@@ -73,6 +73,9 @@
     "eligible": true,
     "input_charset": "symbols",
     "tags": ["substitution", "no_key"],
-    "priority": 55
+    "priority": 55,
+    "family": "symbol_code",
+    "preferred_when": ["tap_code_like", "symbols_only", "grouped_input"],
+    "supports_grouped_input": true
   }
 }

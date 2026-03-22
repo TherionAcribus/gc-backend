@@ -14,6 +14,8 @@ from pathlib import Path
 
 from gc_backend import create_app
 from gc_backend.database import db
+from gc_backend.models import Zone
+from gc_backend.geocaches.models import Geocache, GeocacheWaypoint, GeocacheChecker
 from gc_backend.plugins.models import Plugin
 
 
@@ -47,25 +49,67 @@ def caesar_plugin(app):
     
     with app.app_context():
         # Créer le plugin en DB
-        caesar = Plugin(
-            name='caesar',
-            version='1.0.0',
-            plugin_api_version='2.0',
-            description='Caesar cipher plugin',
-            author='MysterAI',
-            plugin_type='python',
-            source='official',
-            path=str(plugins_dir / 'official' / 'caesar'),
-            entry_point='main.py',
-            enabled=True
-        )
-        db.session.add(caesar)
-        db.session.commit()
+        caesar = Plugin.query.filter_by(name='caesar').first()
+        if caesar is None:
+            caesar = Plugin(
+                name='caesar',
+                version='1.0.0',
+                plugin_api_version='2.0',
+                description='Caesar cipher plugin',
+                author='MysterAI',
+                plugin_type='python',
+                source='official',
+                path=str(plugins_dir / 'official' / 'caesar'),
+                entry_point='main.py',
+                enabled=True
+            )
+            db.session.add(caesar)
+            db.session.commit()
         
         # Forcer la découverte pour charger le plugin dans le PluginManager
         app.plugin_manager.discover_plugins()
         
     return caesar
+
+
+@pytest.fixture
+def sample_geocache(app):
+    with app.app_context():
+        zone = Zone(name='Test Zone')
+        db.session.add(zone)
+        db.session.flush()
+
+        geocache = Geocache(
+            gc_code='GC99999',
+            name='Hidden Formula Cache',
+            zone_id=zone.id,
+            description_raw='N 48 AB.CDE E 002 FG.HIJ\nA=8\nB=5\nC=12\nDecode the hidden code after solving.',
+            description_html='''<div>N 48 AB.CDE E 002 FG.HIJ</div>
+                <div>A=8 B=5 C=12</div>
+                <!-- 8 5 12 12 15 -->
+                <span style="display:none">.... . .-.. .-.. ---</span>''',
+            hints='8 5 12 12 15',
+            images=[{'url': 'https://example.test/puzzle.jpg'}],
+        )
+        db.session.add(geocache)
+        db.session.flush()
+
+        db.session.add(GeocacheWaypoint(
+            geocache_id=geocache.id,
+            prefix='PK',
+            lookup='01',
+            name='Projection',
+            type='Final',
+            gc_coords='N 48 AB.CDE E 002 FG.HIJ',
+            note='Use waypoint projection once A, B and C are solved.'
+        ))
+        db.session.add(GeocacheChecker(
+            geocache_id=geocache.id,
+            name='Certitude',
+            url='https://certitudes.org/certitude?wp=GC99999'
+        ))
+        db.session.commit()
+        return {'id': geocache.id, 'gc_code': geocache.gc_code}
 
 
 class TestPluginsListAPI:
@@ -171,12 +215,339 @@ class TestMetasolverRecommendationAPI:
         data = json.loads(response.data)
 
         assert data['signature']['dominant_input_kind'] == 'digits'
+        assert data['signature']['looks_like_a1z26'] is True
         assert 'alpha_decoder' in data['selected_plugins']
+        assert data['recommendations'][0]['name'] == 'alpha_decoder'
+
+    def test_recommend_metasolver_plugins_for_t9(self, client, app, caesar_plugin):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({
+                'text': '43556',
+                'preset': 'all',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['signature']['looks_like_phone_keypad'] is True
+        assert 't9_code' in data['selected_plugins']
+        assert data['recommendations'][0]['name'] == 't9_code'
+
+    def test_recommend_metasolver_plugins_for_multitap(self, client, app, caesar_plugin):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({
+                'text': '3 222 666 3 33',
+                'preset': 'all',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['signature']['looks_like_multitap'] is True
+        assert 'multitap_code' in data['selected_plugins']
+        assert data['recommendations'][0]['name'] == 'multitap_code'
+
+    def test_recommend_metasolver_plugins_for_houdini_words(self, client, app, caesar_plugin):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({
+                'text': 'Pray Answer Say',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['effective_preset'] == 'words_only'
+        assert data['signature']['looks_like_houdini_words'] is True
+        assert 'houdini_code' in data['selected_plugins']
+        assert data['recommendations'][0]['name'] == 'houdini_code'
+
+    def test_recommend_metasolver_plugins_for_nak_nak(self, client, app, caesar_plugin):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({
+                'text': 'Nanak naknak Nak.',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['effective_preset'] == 'words_only'
+        assert data['signature']['looks_like_nak_nak'] is True
+        assert 'nak_nak_code' in data['selected_plugins']
+        assert data['recommendations'][0]['name'] == 'nak_nak_code'
+
+    def test_recommend_metasolver_plugins_for_shadok(self, client, app, caesar_plugin):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({
+                'text': 'GA BU ZO MEU',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['effective_preset'] == 'words_only'
+        assert data['signature']['looks_like_shadok'] is True
+        assert 'shadok_numbers' in data['selected_plugins']
+        assert data['recommendations'][0]['name'] == 'shadok_numbers'
+
+    def test_recommend_metasolver_plugins_for_tom_tom(self, client, app, caesar_plugin):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({
+                'text': '/ // /\\\\ \\\\\\/',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['effective_preset'] == 'symbols_only'
+        assert data['signature']['looks_like_tom_tom'] is True
+        assert 'tom_tom' in data['selected_plugins']
+        assert data['recommendations'][0]['name'] == 'tom_tom'
+
+    def test_recommend_metasolver_plugins_for_gold_bug(self, client, app, caesar_plugin):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({
+                'text': '52-8*.$();',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['effective_preset'] == 'all'
+        assert data['signature']['looks_like_gold_bug'] is True
+        assert 'gold_bug' in data['selected_plugins']
+        assert data['recommendations'][0]['name'] == 'gold_bug'
+
+    def test_recommend_metasolver_plugins_for_postnet(self, client, app, caesar_plugin):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({
+                'text': '10001100101001100100101010010101',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['effective_preset'] == 'all'
+        assert data['signature']['looks_like_postnet'] is True
+        assert 'postnet_barcode' in data['selected_plugins']
+        assert data['recommendations'][0]['name'] == 'postnet_barcode'
+
+    def test_recommend_metasolver_plugins_for_prime_numbers(self, client, app, caesar_plugin):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({
+                'text': '2 3 5 7 11',
+                'preset': 'all',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['signature']['looks_like_prime_sequence'] is True
+        assert 'prime_numbers' in data['selected_plugins']
+        assert data['recommendations'][0]['name'] == 'prime_numbers'
+
+    def test_recommend_metasolver_plugins_for_chemical_elements(self, client, app, caesar_plugin):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({
+                'text': 'AU FE O',
+                'preset': 'all',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['signature']['looks_like_chemical_symbols'] is True
+        assert 'chemical_elements' in data['selected_plugins']
+        assert data['recommendations'][0]['name'] == 'chemical_elements'
+
+    def test_recommend_metasolver_plugins_for_chemical_elements_with_default_preset(self, client, app, caesar_plugin):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({
+                'text': 'AU FE O',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['effective_preset'] == 'words_only'
+        assert data['signature']['looks_like_chemical_symbols'] is True
+        assert data['recommendations'][0]['name'] == 'chemical_elements'
+
+    def test_recommend_metasolver_plugins_for_bacon(self, client, app, caesar_plugin):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({
+                'text': 'AABBA ABBAA AABBA',
+                'preset': 'all',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['signature']['looks_like_bacon'] is True
+        assert 'bacon_code' in data['selected_plugins']
+
+    def test_recommend_metasolver_plugins_for_polybius(self, client, app, caesar_plugin):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({
+                'text': '11 21 34 34 44',
+                'preset': 'all',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['signature']['looks_like_polybius'] is True
+        assert 'polybius_square' in data['selected_plugins']
+        assert data['recommendations'][0]['name'] == 'polybius_square'
+
+    def test_recommend_metasolver_plugins_for_roman(self, client, app, caesar_plugin):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({
+                'text': 'XIV IX IV',
+                'preset': 'all',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['signature']['looks_like_roman_numerals'] is True
+        assert 'roman_code' in data['selected_plugins']
 
     def test_recommend_metasolver_plugins_requires_text(self, client, app):
         response = client.post(
             '/api/plugins/metasolver/recommend',
             data=json.dumps({'text': '   '}),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert 'error' in data
+
+
+class TestListingClassificationAPI:
+    """Tests pour la classification multi-label du listing."""
+
+    def test_classify_listing_direct_input(self, client, app):
+        response = client.post(
+            '/api/plugins/listing/classify',
+            data=json.dumps({
+                'title': 'Formula hidden code',
+                'description_html': '<div>N 48 AB.CDE E 002 FG.HIJ</div><!-- 8 5 12 12 15 --><span style="display:none">secret</span>',
+                'description': 'A=8 B=5 C=12. Solve the formula then decode the code.',
+                'hint': '43556',
+                'max_secret_fragments': 4
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        labels = {item['name'] for item in data['labels']}
+        assert {'formula', 'hidden_content', 'secret_code'}.issubset(labels)
+        assert data['hidden_signals']
+        assert data['candidate_secret_fragments']
+        assert any(fragment['source'] == 'html_comment' for fragment in data['candidate_secret_fragments'])
+
+    def test_classify_listing_image_puzzle(self, client, app):
+        response = client.post(
+            '/api/plugins/listing/classify',
+            data=json.dumps({
+                'title': 'QR image puzzle',
+                'description': 'Inspect the photo and scan the QR code hidden in the image.',
+                'description_html': '<div><img src="https://example.test/qr.png" alt="qr clue" /></div>',
+                'images': [{'url': 'https://example.test/qr.png'}]
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        labels = {item['name'] for item in data['labels']}
+        assert 'image_puzzle' in labels
+
+    def test_classify_listing_from_geocache(self, client, app, sample_geocache):
+        response = client.post(
+            '/api/plugins/listing/classify',
+            data=json.dumps({
+                'geocache_id': sample_geocache['id'],
+                'max_secret_fragments': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        labels = {item['name'] for item in data['labels']}
+        assert data['source'] == 'geocache'
+        assert data['geocache']['gc_code'] == sample_geocache['gc_code']
+        assert {'formula', 'hidden_content', 'secret_code', 'coord_transform', 'checker_available'}.issubset(labels)
+        assert data['signal_summary']['checker_count'] == 1
+        assert data['signal_summary']['image_count'] == 1
+        assert data['candidate_secret_fragments'][0]['signature']['looks_like_a1z26'] is True
+
+    def test_classify_listing_requires_content(self, client, app):
+        response = client.post(
+            '/api/plugins/listing/classify',
+            data=json.dumps({}),
             content_type='application/json'
         )
 

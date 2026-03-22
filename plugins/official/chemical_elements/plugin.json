@@ -94,8 +94,11 @@
   },
   "metasolver": {
     "eligible": true,
-    "input_charset": "mixed",
+    "input_charset": "words",
     "tags": ["substitution", "no_key"],
-    "priority": 55
+    "priority": 55,
+    "family": "element_code",
+    "preferred_when": ["chemical_like", "words_only", "grouped_input"],
+    "supports_grouped_input": true
   }
 }

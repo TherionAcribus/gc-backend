@@ -78,6 +78,8 @@
     "eligible": true,
     "input_charset": "letters",
     "tags": ["frequent", "classic", "substitution", "no_key"],
-    "priority": 80
+    "priority": 80,
+    "family": "binary_substitution",
+    "preferred_when": ["bacon_like", "grouped_input"]
   }
 }

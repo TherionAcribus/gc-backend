@@ -414,6 +414,7 @@ class SolvedGeocacheArchive(db.Model):
     # Traçabilité de la résolution
     resolution_method = db.Column(db.String(50))   # manual, formula, plugin, brute_force
     resolution_plugins = db.Column(db.Text)         # JSON list of plugin names
+    resolution_diagnostics = db.Column(db.Text)     # JSON snapshot from assistant/plugin executor workflows
 
     # Métadonnées
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
@@ -449,7 +450,7 @@ class SolvedGeocacheArchive(db.Model):
             'found_date': self.found_date.isoformat() if self.found_date else None,
             'resolution_method': self.resolution_method,
             'resolution_plugins': _load(self.resolution_plugins),
+            'resolution_diagnostics': _load(self.resolution_diagnostics),
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }
-

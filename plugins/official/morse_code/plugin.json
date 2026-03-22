@@ -100,6 +100,9 @@
     "eligible": true,
     "input_charset": "symbols",
     "tags": ["frequent", "classic", "substitution", "no_key"],
-    "priority": 85
+    "priority": 85,
+    "family": "symbol_code",
+    "preferred_when": ["morse_like", "symbols_only", "grouped_input"],
+    "supports_grouped_input": true
   }
 }

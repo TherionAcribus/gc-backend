@@ -67,6 +67,9 @@
     "eligible": true,
     "input_charset": "words",
     "tags": ["substitution", "no_key"],
-    "priority": 50
+    "priority": 50,
+    "family": "word_code",
+    "preferred_when": ["nak_nak_like", "words_only", "grouped_input"],
+    "supports_grouped_input": true
   }
 }

@@ -66,6 +66,8 @@
     "eligible": true,
     "input_charset": "letters",
     "tags": ["frequent", "numeral", "no_key"],
-    "priority": 70
+    "priority": 70,
+    "family": "numeral",
+    "preferred_when": ["roman_like", "letters_only", "short_input"]
   }
 }

@@ -97,6 +97,9 @@
     "eligible": true,
     "input_charset": "words",
     "tags": ["substitution", "no_key"],
-    "priority": 55
+    "priority": 55,
+    "family": "word_code",
+    "preferred_when": ["houdini_like", "words_only", "grouped_input"],
+    "supports_grouped_input": true
   }
 }
