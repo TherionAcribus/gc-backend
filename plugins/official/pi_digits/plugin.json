@@ -1,0 +1,85 @@
+{
+  "name": "pi_digits",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Trouve les chiffres de Pi en fonction de leur position dans les décimales. Par exemple, 49 = 49ème décimale de Pi.",
+  "author": "MysterAI",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["AlphabetsDecryption"],
+  "kinds": ["code", "calculator"],
+  "brute_force": false,
+  "enable_scoring": false,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": false,
+    "decode": true,
+    "encode": false
+  },
+  "defaults": {
+    "include_in_analysis": false,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "string",
+      "label": "Positions (séparées par des espaces, virgules ou retours à la ligne)",
+      "placeholder": "Ex: 49 100 1000",
+      "required": true
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["decode"],
+      "default": "decode",
+      "required": true
+    },
+    "format": {
+      "type": "select",
+      "label": "Format de sortie",
+      "options": ["digits_only", "positions_and_digits", "detailed"],
+      "default": "digits_only",
+      "description": "digits_only: uniquement les chiffres | positions_and_digits: position=chiffre | detailed: tableau détaillé"
+    },
+    "allowed_chars": {
+      "type": "string",
+      "label": "Caractères autorisés",
+      "placeholder": "Caractères à ignorer lors du parsing",
+      "default": " \t\r\n.°NSEW"
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Chiffres de Pi"
+    }
+  },
+  "text_handling": {
+    "fields": [
+      "text"
+    ],
+    "allowed_ranges": [
+      "0030-0039"
+    ],
+    "allowed_characters": " \t\r\n.°NSEW,;:-",
+    "unknown_char_policy": "warn_keep",
+    "normalize": {
+      "remove_diacritics": false,
+      "case": "preserve",
+      "map_characters": {}
+    }
+  },
+  "metasolver": {
+    "eligible": true,
+    "input_charset": "digits",
+    "tags": ["numeral", "no_key"],
+    "priority": 60,
+    "family": "numeral",
+    "preferred_when": ["digits_only", "short_input"]
+  }
+}
