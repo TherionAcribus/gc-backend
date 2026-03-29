@@ -115,6 +115,37 @@ def caesar_plugin(app):
 
 
 @pytest.fixture
+def pi_digits_plugin(app):
+    """
+    Fixture qui crée et charge le plugin pi_digits en DB.
+    Nécessaire car TESTING=1 désactive la découverte automatique.
+    """
+    plugins_dir = Path(__file__).parent.parent / 'plugins'
+
+    with app.app_context():
+        plugin = Plugin.query.filter_by(name='pi_digits').first()
+        if plugin is None:
+            plugin = Plugin(
+                name='pi_digits',
+                version='1.0.0',
+                plugin_api_version='2.0',
+                description='Pi digits decoder plugin',
+                author='MysterAI',
+                plugin_type='python',
+                source='official',
+                path=str(plugins_dir / 'official' / 'pi_digits'),
+                entry_point='main.py',
+                enabled=True
+            )
+            db.session.add(plugin)
+            db.session.commit()
+
+        app.plugin_manager.discover_plugins()
+
+    return plugin
+
+
+@pytest.fixture
 def sample_geocache(app):
     with app.app_context():
         zone = Zone(name='Test Zone')
@@ -278,6 +309,24 @@ class TestMetasolverRecommendationAPI:
         assert data['signature']['looks_like_phone_keypad'] is True
         assert 't9_code' in data['selected_plugins']
         assert data['recommendations'][0]['name'] == 't9_code'
+
+    def test_recommend_metasolver_plugins_for_pi_positions(self, client, app, pi_digits_plugin):
+        response = client.post(
+            '/api/plugins/metasolver/recommend',
+            data=json.dumps({
+                'text': '19,44,25,64,41,51,87',
+                'preset': 'all',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['signature']['looks_like_pi_index_positions'] is True
+        assert data['selected_plugins']
+        assert data['selected_plugins'][0] == 'pi_digits'
 
     def test_recommend_metasolver_plugins_for_multitap(self, client, app, caesar_plugin):
         response = client.post(
@@ -793,6 +842,66 @@ class TestWorkflowOrchestratorAPI:
         assert 'alpha_decoder' in data['execution']['secret_code']['recommendation']['selected_plugins']
         assert any(step['id'] == 'recommend-metasolver-plugins' for step in data['plan'])
 
+    def test_resolve_workflow_prefers_direct_pi_plugin(self, client, app, pi_digits_plugin):
+        response = client.post(
+            '/api/plugins/workflow/resolve',
+            data=json.dumps({
+                'title': 'Pi Mystery Cache',
+                'description': (
+                    'E klenge Mystery passend zum Pi-Day\n'
+                    'N 19,44,25,64,41,51,87\n'
+                    'E 50,77,20,32,69,66,60,32\n'
+                    'Vill Spaass'
+                ),
+                'hint': 'Zntargvp',
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['workflow']['kind'] == 'secret_code'
+        assert data['classification']['signal_summary']['has_pi_theme'] is True
+        assert data['classification']['signal_summary']['pi_position_token_count'] == 15
+        assert any(step['id'] == 'execute-direct-plugin' for step in data['plan'])
+        secret_execution = data['execution']['secret_code']
+        assert secret_execution['direct_plugin_candidate'] is not None
+        assert secret_execution['direct_plugin_candidate']['plugin_name'] == 'pi_digits'
+        assert secret_execution['direct_plugin_candidate']['should_run_directly'] is True
+        assert secret_execution['recommendation'] is not None
+        assert 'pi_digits' in secret_execution['recommendation']['selected_plugins']
+
+    def test_resolve_workflow_auto_executes_direct_pi_plugin(self, client, app, pi_digits_plugin):
+        response = client.post(
+            '/api/plugins/workflow/resolve',
+            data=json.dumps({
+                'title': 'Pi Mystery Cache',
+                'description': (
+                    'E klenge Mystery passend zum Pi-Day\n'
+                    'N 19,44,25,64,41,51,87\n'
+                    'E 50,77,20,32,69,66,60,32\n'
+                    'Vill Spaass'
+                ),
+                'auto_execute': True,
+                'max_plugins': 5
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        secret_execution = data['execution']['secret_code']
+        direct_result = secret_execution['direct_plugin_result']
+        assert direct_result is not None
+        assert direct_result['plugin_name'] == 'pi_digits'
+        assert direct_result['status'] == 'success'
+        assert direct_result['coordinates'] is not None
+        assert direct_result['coordinates']['ddm'] == "N 49° 33.654' E 006° 06.740'"
+        assert direct_result['top_results'][0]['text_output'] == "N 49° 33.654' E 006° 06.740'"
+
     def test_resolve_workflow_prefers_hidden_content_when_best_fragment_is_hidden(self, client, app, caesar_plugin):
         response = client.post(
             '/api/plugins/workflow/resolve',
@@ -1260,6 +1369,54 @@ class TestWorkflowStepRunnerAPI:
         assert data['workflow_resolution']['execution']['secret_code']['metasolver_result'] is not None
         assert any(
             step['id'] == 'execute-metasolver' and step['status'] == 'completed'
+            for step in data['workflow_resolution']['plan']
+        )
+
+    def test_run_next_step_executes_direct_pi_plugin(self, client, app, pi_digits_plugin):
+        payload = {
+            'title': 'Pi Mystery Cache',
+            'description': (
+                'E klenge Mystery passend zum Pi-Day\n'
+                'N 19,44,25,64,41,51,87\n'
+                'E 50,77,20,32,69,66,60,32\n'
+                'Vill Spaass'
+            ),
+            'hint': 'Zntargvp',
+            'max_plugins': 5,
+        }
+
+        resolve_response = client.post(
+            '/api/plugins/workflow/resolve',
+            data=json.dumps(payload),
+            content_type='application/json'
+        )
+
+        assert resolve_response.status_code == 200
+        resolve_data = json.loads(resolve_response.data)
+
+        response = client.post(
+            '/api/plugins/workflow/run-next-step',
+            data=json.dumps({
+                **payload,
+                'preferred_workflow': resolve_data['workflow']['kind'],
+                'target_step_id': 'execute-direct-plugin',
+                'workflow_control': resolve_data['control'],
+            }),
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        assert data['status'] == 'success'
+        assert data['executed_step'] == 'execute-direct-plugin'
+        secret_execution = data['workflow_resolution']['execution']['secret_code']
+        assert secret_execution['direct_plugin_result'] is not None
+        assert secret_execution['direct_plugin_result']['plugin_name'] == 'pi_digits'
+        assert secret_execution['direct_plugin_result']['coordinates']['ddm'] == "N 49° 33.654' E 006° 06.740'"
+        assert secret_execution['direct_plugin_result']['top_results'][0]['text_output'] == "N 49° 33.654' E 006° 06.740'"
+        assert any(
+            step['id'] == 'execute-direct-plugin' and step['status'] == 'completed'
             for step in data['workflow_resolution']['plan']
         )
 

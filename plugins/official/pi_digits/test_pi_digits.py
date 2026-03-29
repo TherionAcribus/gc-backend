@@ -235,6 +235,25 @@ def test_allowed_chars_with_cardinals():
     print("  ✓ PASSED\n")
 
 
+def test_axis_structured_coordinates():
+    """Test avec deux axes N/E pour reconstruire une coordonnee DDM complete."""
+    plugin = PiDigitsPlugin()
+
+    result = plugin.execute({
+        "text": "N 19,44,25,64,41,51,87\nE 50,77,20,32,69,66,60,32",
+        "mode": "decode",
+        "format": "digits_only"
+    })
+
+    print("Test 12 - Axes N/E structures:")
+    print(f"  Status: {result['status']}")
+    print(f"  Output: {result['results'][0]['text_output']}")
+    assert result['status'] == 'success'
+    assert result['results'][0]['text_output'] == "N 49° 33.654' E 006° 06.740'"
+    assert result['primary_coordinates']['ddm'] == "N 49° 33.654' E 006° 06.740'"
+    print("  ✓ PASSED\n")
+
+
 def run_all_tests():
     """Exécute tous les tests"""
     print("=" * 60)
@@ -253,6 +272,7 @@ def run_all_tests():
         test_allowed_chars_gps_coordinates()
         test_allowed_chars_geocache_formula()
         test_allowed_chars_with_cardinals()
+        test_axis_structured_coordinates()
         
         print("=" * 60)
         print("✓ TOUS LES TESTS SONT PASSÉS")

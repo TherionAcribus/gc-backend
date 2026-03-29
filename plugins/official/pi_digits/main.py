@@ -1,18 +1,17 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 class PiDigitsPlugin:
     def __init__(self) -> None:
         self.name = "pi_digits"
-        self.version = "1.0.0"
-        self.description = "Trouve les chiffres de Pi en fonction de leur position dans les décimales."
-        
-        # Les 10000 premières décimales de Pi (après la virgule)
-        # Source: https://www.piday.org/million/
+        self.version = "1.1.0"
+        self.description = "Trouve les chiffres de Pi a partir de positions dans ses decimales."
+
+        # First decimals of Pi after the dot.
         self.pi_decimals = (
             "1415926535897932384626433832795028841971693993751058209749445923"
             "0781640628620899862803482534211706798214808651328230664709384460"
@@ -31,173 +30,241 @@ class PiDigitsPlugin:
             "7303598253490428755468731159562863882353787593751957781857780532"
             "171226806613001927876611195909216420198"
         )
-        
         self.max_position = len(self.pi_decimals)
 
-    def get_pi_digit(self, position: int) -> str | None:
-        """
-        Récupère le chiffre de Pi à la position donnée (1-indexed).
-        
-        Args:
-            position: Position dans les décimales de Pi (1 = première décimale = 1)
-        
-        Returns:
-            Le chiffre à cette position, ou None si la position est invalide
-        """
+    def get_pi_digit(self, position: int) -> Optional[str]:
         if position < 1 or position > self.max_position:
             return None
         return self.pi_decimals[position - 1]
 
-    def parse_positions(self, text: str, allowed_chars: str = None) -> List[int]:
-        """
-        Parse le texte pour extraire les positions (nombres entiers).
-        Supporte les séparateurs: espaces, virgules, points-virgules, retours à la ligne.
-        
-        Args:
-            text: Texte contenant les positions
-            allowed_chars: Caractères à ignorer (par défaut: espaces, tabulations, retours à la ligne, points, degrés, cardinaux)
-        """
+    def parse_positions(self, text: str, allowed_chars: Optional[str] = None) -> List[int]:
         if allowed_chars is None:
-            allowed_chars = " \t\r\n.°NSEW"
-        
-        # Créer un pattern regex qui capture les nombres et utilise les caractères autorisés comme séparateurs
-        # On remplace chaque caractère autorisé par un espace pour séparer les nombres
+            allowed_chars = " \t\r\n.A^oNSEW"
+
         cleaned_text = text
         for char in allowed_chars:
-            # Remplacer chaque caractère autorisé par un espace pour séparer les nombres
             cleaned_text = cleaned_text.replace(char, ' ')
-        
-        # Ajouter les virgules et points-virgules comme séparateurs aussi
+
         cleaned_text = cleaned_text.replace(',', ' ').replace(';', ' ').replace(':', ' ').replace('-', ' ')
-        
-        # Extraire tous les nombres du texte nettoyé
-        # On utilise une regex pour extraire uniquement les séquences de chiffres
-        number_pattern = re.compile(r'\d+')
-        matches = number_pattern.findall(cleaned_text)
-        
-        positions = []
+        matches = re.findall(r'\d+', cleaned_text)
+
+        positions: List[int] = []
         for match in matches:
             try:
                 pos = int(match)
-                if pos > 0:  # Ignorer les positions négatives ou nulles
-                    positions.append(pos)
             except ValueError:
                 continue
-        
+            if pos > 0:
+                positions.append(pos)
         return positions
+
+    def parse_axis_positions(self, text: str, allowed_chars: Optional[str] = None) -> Dict[str, List[int]]:
+        axis_positions: Dict[str, List[int]] = {}
+        line_pattern = re.compile(r'^\s*([NSEW])\s+(.+?)\s*$', re.IGNORECASE)
+
+        for raw_line in text.splitlines():
+            match = line_pattern.match(raw_line)
+            if not match:
+                continue
+            axis = match.group(1).upper()
+            payload = match.group(2).strip()
+            positions = self.parse_positions(payload, allowed_chars)
+            if positions:
+                axis_positions[axis] = positions
+
+        return axis_positions
+
+    def _format_ddm_axis(self, axis: str, digits: str) -> Optional[str]:
+        axis = (axis or '').upper()
+        expected_deg_digits = 2 if axis in {'N', 'S'} else 3 if axis in {'E', 'W'} else 0
+        if expected_deg_digits == 0:
+            return None
+        if len(digits) < expected_deg_digits + 3:
+            return None
+
+        degrees = digits[:expected_deg_digits]
+        minutes_int = digits[expected_deg_digits:expected_deg_digits + 2]
+        minutes_dec = digits[expected_deg_digits + 2:]
+        if not minutes_dec:
+            return None
+
+        return f"{axis} {degrees}° {minutes_int}.{minutes_dec}'"
+
+    def _build_coordinates_from_axis_digits(self, axis_digits: Dict[str, str]) -> Optional[Dict[str, Any]]:
+        lat_axis = next((axis for axis in ('N', 'S') if axis in axis_digits), None)
+        lon_axis = next((axis for axis in ('E', 'W') if axis in axis_digits), None)
+        if not lat_axis or not lon_axis:
+            return None
+
+        ddm_lat = self._format_ddm_axis(lat_axis, axis_digits[lat_axis])
+        ddm_lon = self._format_ddm_axis(lon_axis, axis_digits[lon_axis])
+        if not ddm_lat or not ddm_lon:
+            return None
+
+        coordinates: Dict[str, Any] = {
+            'exist': True,
+            'ddm_lat': ddm_lat,
+            'ddm_lon': ddm_lon,
+            'ddm': f'{ddm_lat} {ddm_lon}',
+        }
+
+        try:
+            from gc_backend.blueprints.coordinates import convert_ddm_to_decimal
+
+            decimal_coords = convert_ddm_to_decimal(ddm_lat, ddm_lon)
+            if isinstance(decimal_coords, dict):
+                coordinates['decimal_latitude'] = decimal_coords.get('latitude')
+                coordinates['decimal_longitude'] = decimal_coords.get('longitude')
+        except Exception:
+            pass
+
+        return coordinates
 
     def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         start_time = time.time()
-        
-        text = inputs.get("text", "")
-        mode = str(inputs.get("mode", "decode")).lower()
-        output_format = str(inputs.get("format", "digits_only")).lower()
-        allowed_chars = inputs.get("allowed_chars", " \t\r\n.°NSEW")
-        
-        standardized_response = {
-            "status": "success",
-            "plugin_info": {
-                "name": self.name,
-                "version": self.version,
-                "execution_time": 0,
+
+        text = inputs.get('text', '')
+        mode = str(inputs.get('mode', 'decode')).lower()
+        output_format = str(inputs.get('format', 'digits_only')).lower()
+        allowed_chars = inputs.get('allowed_chars', " \t\r\n.A^oNSEW")
+
+        standardized_response: Dict[str, Any] = {
+            'status': 'success',
+            'plugin_info': {
+                'name': self.name,
+                'version': self.version,
+                'execution_time': 0,
             },
-            "inputs": inputs.copy(),
-            "results": [],
-            "summary": {
-                "best_result_id": None,
-                "total_results": 0,
-                "message": "",
+            'inputs': inputs.copy(),
+            'results': [],
+            'summary': {
+                'best_result_id': None,
+                'total_results': 0,
+                'message': '',
             },
         }
-        
+
         if not text:
-            standardized_response["status"] = "error"
-            standardized_response["summary"]["message"] = "Aucun texte fourni à traiter."
-            standardized_response["plugin_info"]["execution_time"] = int((time.time() - start_time) * 1000)
+            standardized_response['status'] = 'error'
+            standardized_response['summary']['message'] = 'Aucun texte fourni a traiter.'
+            standardized_response['plugin_info']['execution_time'] = int((time.time() - start_time) * 1000)
             return standardized_response
-        
-        if mode != "decode":
-            standardized_response["status"] = "error"
-            standardized_response["summary"]["message"] = f"Mode non supporté: {mode}. Seul 'decode' est disponible."
-            standardized_response["plugin_info"]["execution_time"] = int((time.time() - start_time) * 1000)
+
+        if mode != 'decode':
+            standardized_response['status'] = 'error'
+            standardized_response['summary']['message'] = f"Mode non supporte: {mode}. Seul 'decode' est disponible."
+            standardized_response['plugin_info']['execution_time'] = int((time.time() - start_time) * 1000)
             return standardized_response
-        
+
         try:
-            # Parser les positions
             positions = self.parse_positions(text, allowed_chars)
-            
+            axis_positions = self.parse_axis_positions(text, allowed_chars)
+
             if not positions:
-                standardized_response["status"] = "error"
-                standardized_response["summary"]["message"] = "Aucune position valide trouvée dans le texte."
-                standardized_response["plugin_info"]["execution_time"] = int((time.time() - start_time) * 1000)
+                standardized_response['status'] = 'error'
+                standardized_response['summary']['message'] = 'Aucune position valide trouvee dans le texte.'
+                standardized_response['plugin_info']['execution_time'] = int((time.time() - start_time) * 1000)
                 return standardized_response
-            
-            # Récupérer les chiffres de Pi
-            results_data = []
+
+            results_data: List[Dict[str, Any]] = []
             valid_count = 0
-            invalid_positions = []
-            
+            invalid_positions: List[int] = []
+
             for pos in positions:
                 digit = self.get_pi_digit(pos)
                 if digit is not None:
-                    results_data.append({"position": pos, "digit": digit})
+                    results_data.append({'position': pos, 'digit': digit})
                     valid_count += 1
                 else:
                     invalid_positions.append(pos)
-            
+
             if not results_data:
-                standardized_response["status"] = "error"
-                standardized_response["summary"]["message"] = (
-                    f"Aucune position valide. Les positions doivent être entre 1 et {self.max_position}."
+                standardized_response['status'] = 'error'
+                standardized_response['summary']['message'] = (
+                    f'Aucune position valide. Les positions doivent etre entre 1 et {self.max_position}.'
                 )
-                standardized_response["plugin_info"]["execution_time"] = int((time.time() - start_time) * 1000)
+                standardized_response['plugin_info']['execution_time'] = int((time.time() - start_time) * 1000)
                 return standardized_response
-            
-            # Formater la sortie selon le format demandé
-            if output_format == "digits_only":
-                text_output = "".join([item["digit"] for item in results_data])
-            elif output_format == "positions_and_digits":
-                text_output = " ".join([f"{item['position']}={item['digit']}" for item in results_data])
-            else:  # detailed
+
+            axis_positions_data: Dict[str, List[Dict[str, Any]]] = {}
+            axis_digits: Dict[str, str] = {}
+            for axis, axis_values in axis_positions.items():
+                axis_items: List[Dict[str, Any]] = []
+                for pos in axis_values:
+                    digit = self.get_pi_digit(pos)
+                    if digit is not None:
+                        axis_items.append({'position': pos, 'digit': digit})
+                if axis_items:
+                    axis_positions_data[axis] = axis_items
+                    axis_digits[axis] = ''.join(item['digit'] for item in axis_items)
+
+            structured_coordinates = self._build_coordinates_from_axis_digits(axis_digits)
+            raw_digits = ''.join(item['digit'] for item in results_data)
+
+            if output_format == 'digits_only':
+                text_output = structured_coordinates['ddm'] if structured_coordinates and structured_coordinates.get('ddm') else raw_digits
+            elif output_format == 'positions_and_digits':
+                if axis_positions_data:
+                    chunks: List[str] = []
+                    for axis in ('N', 'S', 'E', 'W'):
+                        items = axis_positions_data.get(axis)
+                        if items:
+                            chunks.append(f"{axis} " + ' '.join(f"{item['position']}={item['digit']}" for item in items))
+                    text_output = ' | '.join(chunks)
+                else:
+                    text_output = ' '.join(f"{item['position']}={item['digit']}" for item in results_data)
+            else:
                 lines = [f"Position {item['position']}: {item['digit']}" for item in results_data]
-                text_output = "\n".join(lines)
-            
-            # Construire les métadonnées
-            metadata = {
-                "total_positions": len(positions),
-                "valid_positions": valid_count,
-                "invalid_positions": invalid_positions if invalid_positions else None,
-                "max_available_position": self.max_position,
-                "positions_data": results_data,
+                if structured_coordinates and structured_coordinates.get('ddm'):
+                    lines.extend(['', f"Coordonnees: {structured_coordinates['ddm']}"])
+                text_output = '\n'.join(lines)
+
+            metadata: Dict[str, Any] = {
+                'total_positions': len(positions),
+                'valid_positions': valid_count,
+                'invalid_positions': invalid_positions if invalid_positions else None,
+                'max_available_position': self.max_position,
+                'positions_data': results_data,
+                'axis_positions': axis_positions or None,
+                'axis_positions_data': axis_positions_data or None,
+                'axis_digits': axis_digits or None,
+                'raw_digits_only': raw_digits,
+                'structured_coordinates': structured_coordinates,
             }
-            
-            # Message de résumé
-            summary_msg = f"{valid_count} chiffre(s) de Pi trouvé(s)"
+
+            summary_msg = f'{valid_count} chiffre(s) de Pi trouve(s)'
             if invalid_positions:
-                summary_msg += f" ({len(invalid_positions)} position(s) invalide(s) ignorée(s))"
-            
-            standardized_response["results"].append({
-                "id": "result_1",
-                "text_output": text_output,
-                "confidence": 1.0,
-                "parameters": {
-                    "mode": "decode",
-                    "format": output_format,
+                summary_msg += f" ({len(invalid_positions)} position(s) invalide(s) ignoree(s))"
+            if structured_coordinates and structured_coordinates.get('ddm'):
+                summary_msg += f" | coordonnees: {structured_coordinates['ddm']}"
+
+            result_item: Dict[str, Any] = {
+                'id': 'result_1',
+                'text_output': text_output,
+                'confidence': 1.0,
+                'parameters': {
+                    'mode': 'decode',
+                    'format': output_format,
                 },
-                "metadata": metadata,
+                'metadata': metadata,
+            }
+            if structured_coordinates:
+                result_item['coordinates'] = structured_coordinates
+                result_item['decimal_latitude'] = structured_coordinates.get('decimal_latitude')
+                result_item['decimal_longitude'] = structured_coordinates.get('decimal_longitude')
+
+            standardized_response['results'].append(result_item)
+            standardized_response['primary_coordinates'] = structured_coordinates
+            standardized_response['summary'].update({
+                'best_result_id': 'result_1',
+                'total_results': 1,
+                'message': summary_msg,
             })
-            
-            standardized_response["summary"].update({
-                "best_result_id": "result_1",
-                "total_results": 1,
-                "message": summary_msg,
-            })
-            
         except Exception as exc:
-            standardized_response["status"] = "error"
-            standardized_response["summary"]["message"] = f"Erreur pendant le traitement : {exc}"
-        
-        standardized_response["plugin_info"]["execution_time"] = int((time.time() - start_time) * 1000)
+            standardized_response['status'] = 'error'
+            standardized_response['summary']['message'] = f'Erreur pendant le traitement : {exc}'
+
+        standardized_response['plugin_info']['execution_time'] = int((time.time() - start_time) * 1000)
         return standardized_response
 
 

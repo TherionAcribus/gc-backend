@@ -95,6 +95,7 @@ DECIMAL_COORDINATE_PAIR_PATTERN = re.compile(
     r'(-?\d{1,2}(?:[.,]\d+)?)\s*[,;/]\s*(-?\d{1,3}(?:[.,]\d+)?)'
 )
 DDM_COORDINATE_PAIR_PATTERN = re.compile(r'([NS][^EW]+?)\s+([EW].+)$', re.IGNORECASE)
+PI_THEME_PATTERN = re.compile(r'(?<![A-Z0-9])(?:PI(?:\s*-\s*DAY|\s+DAY)?|Π)(?![A-Z0-9])', re.IGNORECASE)
 
 
 def _load_metasolver_presets(manager: PluginManager) -> Dict[str, Any]:
@@ -263,6 +264,7 @@ def _analyze_metasolver_signature(text: str) -> Dict[str, Any]:
     digit_candidate = re.sub(r'\D', '', trimmed)
     bacon_candidate = re.sub(r'[\s|,;:_/-]+', '', compact_upper)
     numeric_tokens = [int(token) for token in tokens if re.fullmatch(r'\d+', token)]
+    grouped_numeric_tokens = [int(token) for token in re.findall(r'\d+', trimmed)]
     alpha_tokens_upper = [token.upper() for token in tokens if token.isalpha()]
     stripped_tokens = [re.sub(r'^[^\w?!.]+|[^\w?!.]+$', '', token) for token in tokens]
     normalized_word_tokens = [token.upper() for token in stripped_tokens if any(char.isalpha() for char in token)]
@@ -360,6 +362,13 @@ def _analyze_metasolver_signature(text: str) -> Dict[str, Any]:
         and len(numeric_tokens) == len(tokens)
         and all(_is_prime(token) for token in numeric_tokens)
     )
+    looks_like_pi_index_positions = (
+        len(grouped_numeric_tokens) >= 6
+        and max(grouped_numeric_tokens or [0]) > 26
+        and max(grouped_numeric_tokens or [0]) <= 10_000
+        and len({token for token in grouped_numeric_tokens}) >= 4
+        and bool(re.search(r'[,;:/_-]', trimmed))
+    )
     looks_like_bacon = (
         bool(bacon_candidate)
         and len(bacon_candidate) >= 10
@@ -378,6 +387,8 @@ def _analyze_metasolver_signature(text: str) -> Dict[str, Any]:
         suggested_preset = 'symbols_only'
     elif looks_like_houdini_words or looks_like_nak_nak or looks_like_shadok or looks_like_chemical_symbols:
         suggested_preset = 'words_only'
+    elif looks_like_pi_index_positions:
+        suggested_preset = 'numeral'
     elif dominant_input_kind == 'digits':
         suggested_preset = 'digits_only'
     elif dominant_input_kind == 'symbols':
@@ -421,6 +432,7 @@ def _analyze_metasolver_signature(text: str) -> Dict[str, Any]:
         'looks_like_gold_bug': looks_like_gold_bug,
         'looks_like_postnet': looks_like_postnet,
         'looks_like_prime_sequence': looks_like_prime_sequence,
+        'looks_like_pi_index_positions': looks_like_pi_index_positions,
         'looks_like_bacon': looks_like_bacon,
         'looks_like_coordinate_fragment': looks_like_coordinate_fragment,
         'suggested_preset': suggested_preset,
@@ -526,6 +538,12 @@ def _score_metasolver_candidate(candidate: Dict[str, Any], signature: Dict[str, 
         score += 130
         reasons.append("Le texte ressemble Ã  une sÃ©quence de nombres premiers")
 
+    if signature.get('looks_like_pi_index_positions') and _candidate_name_matches(candidate, 'pi'):
+        score += 180
+        reasons.append("Le texte ressemble a des positions indexees dans les decimales de Pi")
+    elif signature.get('looks_like_pi_index_positions') and 'numeral' in tags:
+        score += 18
+
     if signature.get('looks_like_roman_numerals') and _candidate_name_matches(candidate, 'roman'):
         score += 120
         reasons.append("Le texte ressemble Ã  des chiffres romains")
@@ -567,6 +585,7 @@ def _score_metasolver_candidate(candidate: Dict[str, Any], signature: Dict[str, 
         'gold_bug_like': (bool(signature.get('looks_like_gold_bug')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  du Gold-Bug"),
         'postnet_like': (bool(signature.get('looks_like_postnet')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  du POSTNET"),
         'prime_like': (bool(signature.get('looks_like_prime_sequence')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  une sÃƒÂ©quence de nombres premiers"),
+        'pi_index_positions_like': (bool(signature.get('looks_like_pi_index_positions')), "Le motif detecte correspond a des positions indexees pour Pi"),
         'roman_like': (bool(signature.get('looks_like_roman_numerals')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  des chiffres romains"),
         'a1z26_like': (bool(signature.get('looks_like_a1z26')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  un code A1Z26"),
         'tap_code_like': (bool(signature.get('looks_like_tap_code')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  du Tap Code"),
@@ -622,6 +641,7 @@ def _normalize_max_plugins(value: Any, default: int = 8) -> int:
 SUPPORTED_AUTOMATED_WORKFLOW_STEPS = frozenset({
     'inspect-hidden-html',
     'inspect-images',
+    'execute-direct-plugin',
     'execute-metasolver',
     'search-answers',
     'calculate-final-coordinates',
@@ -720,7 +740,7 @@ def _normalize_bool(value: Any, default: bool) -> bool:
 
 
 LISTING_CLASSIFICATION_ACTIONS: Dict[str, str] = {
-    'secret_code': "Extract the most structured fragment, then call recommend_metasolver_plugins before metasolver.",
+    'secret_code': "Extract the most structured fragment, run a direct plugin if the family is obvious, otherwise call recommend_metasolver_plugins before metasolver.",
     'hidden_content': "Inspect HTML comments, hidden styles, CSS-hidden selectors and page source before trying decoders.",
     'formula': "List variables and coordinate placeholders, then use the formula solver workflow.",
     'word_game': "Identify the exact game type first (sudoku, crossword, anagram, etc.) before decoding.",
@@ -767,6 +787,48 @@ def _collect_waypoint_listing_text(waypoints: Any) -> str:
             if isinstance(value, str) and value.strip():
                 parts.append(value.strip())
     return '\n'.join(parts)
+
+
+def _contains_pi_theme(*values: Any) -> bool:
+    combined = '\n'.join(str(value or '') for value in values if value)
+    return bool(combined and PI_THEME_PATTERN.search(combined))
+
+
+def _extract_pi_coordinate_position_sequences(*values: Any) -> Optional[Dict[str, Any]]:
+    ordered_axes = ('N', 'S', 'E', 'W')
+    axis_lines: Dict[str, str] = {}
+    axis_positions: Dict[str, List[int]] = {}
+
+    for value in values:
+        if not value:
+            continue
+        text = str(value)
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if len(line) < 3 or line[0].upper() not in ordered_axes:
+                continue
+            if any(marker in line for marker in ('°', 'º')):
+                continue
+            axis = line[0].upper()
+            body = line[1:].strip()
+            if not body or re.search(r'[A-DF-Z]{2,}', body, flags=re.IGNORECASE):
+                continue
+            positions = [int(token) for token in re.findall(r'\d{1,4}', body)]
+            if len(positions) < 6 or any(position <= 0 for position in positions):
+                continue
+            axis_positions[axis] = positions
+            axis_lines[axis] = f"{axis} " + ','.join(str(position) for position in positions)
+
+    if not axis_positions:
+        return None
+
+    source_lines = [axis_lines[axis] for axis in ordered_axes if axis in axis_lines]
+    return {
+        'axes': [axis for axis in ordered_axes if axis in axis_positions],
+        'axis_positions': axis_positions,
+        'source_text': '\n'.join(source_lines),
+        'total_positions': sum(len(values) for values in axis_positions.values()),
+    }
 
 
 HIDDEN_STYLE_MARKER_PATTERNS: Tuple[Tuple[re.Pattern[str], str], ...] = (
@@ -1752,6 +1814,8 @@ def _build_secret_fragment_evidence(signature: Dict[str, Any], source_name: str)
         evidence.append("Roman numeral pattern detected")
     if signature.get('looks_like_a1z26'):
         evidence.append("Grouped values in the 1-26 range detected")
+    if signature.get('looks_like_pi_index_positions'):
+        evidence.append("Indexed numeric positions suitable for Pi digits detected")
     if signature.get('looks_like_tap_code'):
         evidence.append("Tap code groups detected")
     if signature.get('looks_like_bacon'):
@@ -1777,6 +1841,8 @@ def _score_secret_fragment(signature: Dict[str, Any], source_name: str) -> float
         score += 32
     if signature.get('looks_like_a1z26'):
         score += 50
+    if signature.get('looks_like_pi_index_positions'):
+        score += 54
     if signature.get('looks_like_tap_code'):
         score += 50
     if signature.get('looks_like_bacon'):
@@ -2358,6 +2424,10 @@ def _build_listing_classification(
 
     combined_text = '\n'.join(part for part in (title, description, hint, waypoint_text) if part).strip()
     combined_lower = combined_text.lower()
+    has_pi_theme = _contains_pi_theme(title, description, hint, waypoint_text)
+    pi_coordinate_sequences = _extract_pi_coordinate_position_sequences(description, hint, waypoint_text, title)
+    pi_position_token_count = int((pi_coordinate_sequences or {}).get('total_positions') or 0)
+    pi_coordinate_axes = list((pi_coordinate_sequences or {}).get('axes') or [])
 
     secret_fragments = _extract_secret_fragments(
         title=title,
@@ -2480,6 +2550,11 @@ def _build_listing_classification(
         secret_evidence.append(
             f"Structured fragment detected in {strongest_fragment.get('source')}: {strongest_fragment.get('text')[:60]}"
         )
+    if has_pi_theme and pi_position_token_count:
+        secret_score += 30.0
+        secret_evidence.append(
+            f"Theme Pi detecte avec {pi_position_token_count} positions indexees sur les axes {'/'.join(pi_coordinate_axes or ['listing'])}"
+        )
     if re.search(code_keywords, combined_lower, flags=re.IGNORECASE):
         secret_score += 18.0
         secret_evidence.append("Code / cipher vocabulary detected")
@@ -2568,6 +2643,8 @@ def _build_listing_classification(
     direct_domain_score = 0.0
     if best_direct_fragment:
         direct_domain_score += float(best_direct_fragment.get('score') or 0.0)
+    if has_pi_theme and pi_position_token_count:
+        direct_domain_score += 30.0
     if re.search(code_keywords, combined_lower, flags=re.IGNORECASE):
         direct_domain_score += 18.0
     if hint and len(hint.strip()) <= 96 and best_direct_fragment:
@@ -2623,6 +2700,9 @@ def _build_listing_classification(
             'has_title': bool(title),
             'has_hint': bool(hint),
             'has_description_html': bool(description_html),
+            'has_pi_theme': has_pi_theme,
+            'pi_position_token_count': pi_position_token_count,
+            'pi_coordinate_axes': pi_coordinate_axes,
             'image_count': image_count,
             'image_hint_count': image_hint_count,
             'image_hint_sources': image_hint_sources,
@@ -2830,6 +2910,129 @@ def _recommend_metasolver_plugins_response(
     }
 
 
+def _extract_plugin_summary_text(summary: Any) -> str:
+    if isinstance(summary, dict):
+        for key in ('message', 'summary', 'status'):
+            value = str(summary.get(key) or '').strip()
+            if value:
+                return value
+        return ''
+    return str(summary or '').strip()
+
+
+def _summarize_direct_plugin_result(
+    plugin_name: str,
+    result: Dict[str, Any],
+    *,
+    limit: int = 5,
+) -> Dict[str, Any]:
+    raw_results = result.get('results') or []
+    top_results: List[Dict[str, Any]] = []
+    for item in raw_results[:limit]:
+        if not isinstance(item, dict):
+            continue
+        top_results.append({
+            'text_output': item.get('text_output'),
+            'coordinates': item.get('coordinates'),
+            'confidence': item.get('confidence'),
+            'method': item.get('method'),
+            'plugin': item.get('plugin') or item.get('source_plugin') or plugin_name,
+        })
+
+    coordinates = result.get('coordinates') or result.get('primary_coordinates')
+    if not coordinates:
+        for item in top_results:
+            if item.get('coordinates'):
+                coordinates = item.get('coordinates')
+                break
+
+    summary_text = _extract_plugin_summary_text(result.get('summary'))
+    if not summary_text and top_results:
+        summary_text = f"{len(top_results)} resultat(s)"
+    if not summary_text:
+        summary_text = str(result.get('status') or 'plugin executed')
+
+    return {
+        'plugin_name': plugin_name,
+        'status': result.get('status'),
+        'summary': summary_text,
+        'results_count': len(raw_results),
+        'top_results': top_results,
+        'coordinates': coordinates,
+    }
+
+
+def _direct_plugin_result_succeeded(result: Any) -> bool:
+    if not isinstance(result, dict):
+        return False
+    status = str(result.get('status') or '').strip().lower()
+    return status in {'success', 'ok', 'valid'} and int(result.get('results_count') or 0) > 0
+
+
+def _build_secret_code_direct_plugin_candidate(
+    listing_inputs: Dict[str, Any],
+    classification: Dict[str, Any],
+    recommendation: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    signal_summary = classification.get('signal_summary') if isinstance(classification.get('signal_summary'), dict) else {}
+    if not bool(signal_summary.get('has_pi_theme')):
+        return None
+
+    sequences = _extract_pi_coordinate_position_sequences(
+        listing_inputs.get('description') or '',
+        listing_inputs.get('hint') or '',
+        listing_inputs.get('waypoint_text') or '',
+        listing_inputs.get('title') or '',
+    )
+    if not sequences:
+        return None
+
+    manager = get_plugin_manager()
+    plugin_info = manager.get_plugin_info('pi_digits') or {}
+    if not plugin_info or not bool(plugin_info.get('enabled', True)):
+        return None
+
+    axes = [str(item or '').strip() for item in (sequences.get('axes') or []) if str(item or '').strip()]
+    confidence = 0.84
+    if axes and {'N', 'E'}.issubset(set(axes)):
+        confidence += 0.09
+    if PI_THEME_PATTERN.search(str(listing_inputs.get('title') or '')):
+        confidence += 0.04
+    confidence = round(min(0.99, confidence), 3)
+
+    fallback_plugin_list = list((recommendation or {}).get('selected_plugins') or [])
+    if 'pi_digits' not in fallback_plugin_list:
+        fallback_plugin_list.insert(0, 'pi_digits')
+
+    return {
+        'plugin_name': 'pi_digits',
+        'confidence': confidence,
+        'reason': (
+            "Theme Pi detecte avec une sequence de positions indexees "
+            + ('/'.join(axes) if axes else 'dans le listing')
+            + "."
+        ),
+        'source_kind': 'pi_index_positions',
+        'source_text': str(sequences.get('source_text') or ''),
+        'should_run_directly': confidence >= 0.9,
+        'plugin_inputs': {
+            'text': str(sequences.get('source_text') or ''),
+            'mode': 'decode',
+            'format': 'digits_only',
+        },
+        'axes': axes,
+        'position_count': int(sequences.get('total_positions') or 0),
+        'fallback_plugin_list': fallback_plugin_list,
+    }
+
+
+def _execute_direct_plugin_candidate(candidate: Dict[str, Any]) -> Dict[str, Any]:
+    plugin_name = str(candidate.get('plugin_name') or '').strip()
+    plugin_inputs = candidate.get('plugin_inputs') if isinstance(candidate.get('plugin_inputs'), dict) else {}
+    raw_result = get_plugin_manager().execute_plugin(plugin_name, plugin_inputs)
+    return _summarize_direct_plugin_result(plugin_name, raw_result or {})
+
+
 def _normalize_workflow_kind(value: Any) -> Optional[str]:
     normalized = str(value or '').strip().lower()
     if normalized in {'general', 'secret_code', 'formula', 'checker', 'hidden_content', 'image_puzzle', 'coord_transform'}:
@@ -2889,6 +3092,13 @@ def _build_workflow_candidates(classification: Dict[str, Any]) -> List[Dict[str,
     has_formula_coordinate_placeholders = bool(signal_summary.get('has_formula_coordinate_placeholders'))
     projection_keyword_count = int(signal_summary.get('projection_keyword_count') or 0)
     visual_image_signal_count = int(signal_summary.get('visual_image_signal_count') or 0)
+    has_pi_theme = bool(signal_summary.get('has_pi_theme'))
+    pi_position_token_count = int(signal_summary.get('pi_position_token_count') or 0)
+    pi_coordinate_axes = [
+        str(item or '').strip()
+        for item in (signal_summary.get('pi_coordinate_axes') or [])
+        if str(item or '').strip()
+    ]
     dominant_evidence_domain = str(signal_summary.get('dominant_evidence_domain') or '').strip()
     evidence_domain_gap = float(signal_summary.get('evidence_domain_gap') or 0.0)
     is_hybrid_listing = bool(signal_summary.get('is_hybrid_listing'))
@@ -2913,6 +3123,13 @@ def _build_workflow_candidates(classification: Dict[str, Any]) -> List[Dict[str,
         if kind == 'secret_code' and best_fragment_confidence:
             score += 0.08 if best_fragment_confidence >= 0.8 else 0.03
             reason_parts.append(f"Fragment structure fort: {(best_fragment_confidence * 100):.0f}%.")
+            if has_pi_theme and pi_position_token_count:
+                score += 0.1
+                reason_parts.append(
+                    "Le theme Pi avec des positions indexees "
+                    + ('/'.join(pi_coordinate_axes) if pi_coordinate_axes else 'du listing')
+                    + " renforce un decodeur direct de type pi_digits."
+                )
             if best_fragment_source in HIDDEN_SECRET_FRAGMENT_SOURCES and label_map.get('hidden_content'):
                 score -= 0.08
                 if 'hidden_content' not in supporting_labels:
@@ -3197,6 +3414,18 @@ def _select_primary_secret_fragment(classification: Dict[str, Any], listing_inpu
     ]
     if not fragments:
         return None
+
+    signal_summary = classification.get('signal_summary') if isinstance(classification.get('signal_summary'), dict) else {}
+    if bool(signal_summary.get('has_pi_theme')) and int(signal_summary.get('pi_position_token_count') or 0) >= 6:
+        pi_fragment = next(
+            (
+                item for item in fragments
+                if bool(((item.get('signature') or {}).get('looks_like_pi_index_positions')))
+            ),
+            None,
+        )
+        if pi_fragment:
+            return pi_fragment
 
     hint = str(listing_inputs.get('hint') or '').strip()
     if hint:
@@ -3754,6 +3983,21 @@ def _resolve_checker_candidate(data: Dict[str, Any], workflow_resolution: Dict[s
         return candidate
 
     secret_payload = execution.get('secret_code') or {}
+    direct_plugin_result = secret_payload.get('direct_plugin_result') or {}
+    candidate = _format_checker_candidate_from_coordinates(direct_plugin_result.get('coordinates'))
+    if candidate:
+        return candidate
+
+    for item in direct_plugin_result.get('top_results') or []:
+        if not isinstance(item, dict):
+            continue
+        candidate = _format_checker_candidate_from_coordinates(item.get('coordinates'))
+        if candidate:
+            return candidate
+        text_output = str(item.get('text_output') or '').strip()
+        if text_output:
+            return text_output
+
     metasolver_result = secret_payload.get('metasolver_result') or {}
     candidate = _format_checker_candidate_from_coordinates(metasolver_result.get('coordinates'))
     if candidate:
@@ -4049,6 +4293,8 @@ def _build_workflow_usage(
             usage[key] = _normalize_positive_int(raw_previous_usage.get(key), usage[key], minimum=0, maximum=1000)
 
     secret_payload = execution.get('secret_code') or {}
+    if (secret_payload.get('direct_plugin_result') or {}).get('status'):
+        usage['automated_steps'] = max(usage['automated_steps'], 1)
     if (secret_payload.get('metasolver_result') or {}).get('status'):
         usage['metasolver_runs'] = max(usage['metasolver_runs'], 1)
 
@@ -4092,6 +4338,7 @@ def _build_workflow_usage(
         usage['vision_ocr_runs'] += current_vision_usage
 
     inferred_automated_steps = 0
+    inferred_automated_steps += 1 if (secret_payload.get('direct_plugin_result') or {}).get('status') else 0
     inferred_automated_steps += usage['metasolver_runs']
     inferred_automated_steps += 1 if hidden_payload.get('inspected') else 0
     inferred_automated_steps += 1 if image_payload.get('inspected') else 0
@@ -4148,6 +4395,14 @@ def _estimate_workflow_final_confidence(
         secret_payload = execution.get('secret_code') or {}
         if secret_payload.get('selected_fragment'):
             confidence = max(confidence, 0.34)
+        direct_plugin_candidate = secret_payload.get('direct_plugin_candidate') or {}
+        if direct_plugin_candidate.get('plugin_name'):
+            confidence = max(confidence, 0.56)
+        direct_plugin_result = secret_payload.get('direct_plugin_result') or {}
+        if direct_plugin_result.get('results_count'):
+            confidence = max(confidence, 0.72)
+        if direct_plugin_result.get('coordinates'):
+            confidence = max(confidence, 0.8)
         if secret_payload.get('recommendation'):
             confidence = max(confidence, 0.48)
         metasolver_result = secret_payload.get('metasolver_result') or {}
@@ -4392,6 +4647,8 @@ def _build_resolution_plan(
 
     if workflow_kind == 'secret_code':
         selected_fragment = (secret_payload or {}).get('selected_fragment')
+        direct_plugin_candidate = (secret_payload or {}).get('direct_plugin_candidate')
+        direct_plugin_result = (secret_payload or {}).get('direct_plugin_result')
         recommendation = (secret_payload or {}).get('recommendation')
         metasolver_result = (secret_payload or {}).get('metasolver_result')
         plan.extend([
@@ -4402,6 +4659,14 @@ def _build_resolution_plan(
                 'automated': True,
                 'tool': 'geoapp.plugins.listing.classify',
                 'detail': (selected_fragment or {}).get('text'),
+            },
+            {
+                'id': 'execute-direct-plugin',
+                'title': 'Executer directement le plugin le plus specifique',
+                'status': 'completed' if direct_plugin_result else ('planned' if direct_plugin_candidate and direct_plugin_candidate.get('should_run_directly') else 'skipped'),
+                'automated': bool(direct_plugin_candidate and direct_plugin_candidate.get('should_run_directly')),
+                'tool': str((direct_plugin_candidate or {}).get('plugin_name') or ''),
+                'detail': (direct_plugin_result or {}).get('summary') or (direct_plugin_candidate or {}).get('reason'),
             },
             {
                 'id': 'recommend-metasolver-plugins',
@@ -4550,6 +4815,8 @@ def _resolve_workflow_orchestrator(
 
     if workflow['kind'] == 'secret_code':
         selected_fragment = _select_primary_secret_fragment(classification_response, listing_inputs)
+        direct_plugin_candidate = None
+        direct_plugin_result = None
         recommendation = None
         metasolver_result = None
 
@@ -4562,27 +4829,45 @@ def _resolve_workflow_orchestrator(
                     mode=(str(data.get('metasolver_mode') or 'decode')).strip().lower(),
                     max_plugins=max_plugins,
                 )
+                direct_plugin_candidate = _build_secret_code_direct_plugin_candidate(
+                    listing_inputs,
+                    classification_response,
+                    recommendation=recommendation,
+                )
                 if auto_execute:
-                    metasolver_inputs = {
-                        'text': fragment_text,
-                        'mode': recommendation.get('mode') or 'decode',
-                        'preset': recommendation.get('effective_preset') or 'all',
-                        'plugin_list': recommendation.get('plugin_list') or '',
-                        'max_plugins': max_plugins,
-                    }
-                    metasolver_result = _summarize_plugin_results(
-                        get_plugin_manager().execute_plugin('metasolver', metasolver_inputs)
-                    )
-                    metasolver_result = _attach_metasolver_geographic_plausibility(metasolver_result, listing_inputs)
+                    if direct_plugin_candidate and direct_plugin_candidate.get('should_run_directly'):
+                        direct_plugin_result = _execute_direct_plugin_candidate(direct_plugin_candidate)
+                    if not _direct_plugin_result_succeeded(direct_plugin_result) and recommendation:
+                        metasolver_inputs = {
+                            'text': fragment_text,
+                            'mode': recommendation.get('mode') or 'decode',
+                            'preset': recommendation.get('effective_preset') or 'all',
+                            'plugin_list': recommendation.get('plugin_list') or '',
+                            'max_plugins': max_plugins,
+                        }
+                        metasolver_result = _summarize_plugin_results(
+                            get_plugin_manager().execute_plugin('metasolver', metasolver_inputs)
+                        )
+                        metasolver_result = _attach_metasolver_geographic_plausibility(metasolver_result, listing_inputs)
 
         secret_payload = {
             'selected_fragment': selected_fragment,
+            'direct_plugin_candidate': direct_plugin_candidate,
+            'direct_plugin_result': direct_plugin_result,
             'recommendation': recommendation,
             'metasolver_result': metasolver_result,
         }
         if selected_fragment:
             explanation.append(
                 f"Fragment principal: {str(selected_fragment.get('text') or '')[:80]}"
+            )
+        if direct_plugin_candidate:
+            explanation.append(
+                f"Plugin direct candidat: {direct_plugin_candidate.get('plugin_name')} ({float(direct_plugin_candidate.get('confidence') or 0.0):.2f})"
+            )
+        if direct_plugin_result:
+            explanation.append(
+                f"Plugin direct execute: {direct_plugin_result.get('plugin_name')} - {direct_plugin_result.get('summary')}"
             )
         if recommendation:
             explanation.append(
@@ -4828,6 +5113,37 @@ def _run_workflow_step_orchestrator(
         message = 'Inspection des images terminee.'
         result_payload = image_payload
 
+    elif step_id == 'execute-direct-plugin':
+        secret_payload = execution.get('secret_code') or {}
+        direct_plugin_candidate = secret_payload.get('direct_plugin_candidate') or {}
+        if not direct_plugin_candidate or not direct_plugin_candidate.get('plugin_name'):
+            return {
+                'status': 'blocked',
+                'executed_step': None,
+                'message': 'Aucun plugin direct suffisamment fiable n est disponible pour ce fragment.',
+                'step': selected_step,
+                'result': None,
+                'workflow_resolution': workflow_resolution,
+            }
+
+        direct_plugin_result = _execute_direct_plugin_candidate(direct_plugin_candidate)
+        secret_payload['direct_plugin_result'] = direct_plugin_result
+        execution['secret_code'] = secret_payload
+        detail = direct_plugin_result.get('summary') or f"{direct_plugin_result.get('results_count', 0)} resultat(s)"
+        selected_step = _mark_plan_step(plan, step_id, status='completed', detail=detail, automated=True) or selected_step
+        workflow_resolution['next_actions'] = _recompute_workflow_next_actions(plan, classification)
+        workflow_resolution.setdefault('explanation', []).append(
+            f"Plugin direct execute: {direct_plugin_result.get('plugin_name')} - {detail}"
+        )
+        message = f"Plugin direct execute: {direct_plugin_result.get('plugin_name')}"
+        result_payload = {
+            'selected_fragment': secret_payload.get('selected_fragment'),
+            'direct_plugin_candidate': direct_plugin_candidate,
+            'direct_plugin_result': direct_plugin_result,
+            'recommendation': secret_payload.get('recommendation'),
+            'metasolver_result': secret_payload.get('metasolver_result'),
+        }
+
     elif step_id == 'execute-metasolver':
         secret_payload = execution.get('secret_code') or {}
         selected_fragment = secret_payload.get('selected_fragment') or {}
@@ -4863,6 +5179,8 @@ def _run_workflow_step_orchestrator(
         message = 'Metasolver execute sur le fragment principal.'
         result_payload = {
             'selected_fragment': selected_fragment,
+            'direct_plugin_candidate': secret_payload.get('direct_plugin_candidate'),
+            'direct_plugin_result': secret_payload.get('direct_plugin_result'),
             'recommendation': recommendation,
             'metasolver_result': metasolver_result,
         }
