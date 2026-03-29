@@ -1,4 +1,5 @@
 import logging
+import os
 from flask import Flask
 from flask_cors import CORS
 from flask_migrate import Migrate
@@ -18,6 +19,12 @@ logging.basicConfig(
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
+
+    is_testing = os.environ.get('TESTING') == '1'
+    if is_testing:
+        # Tests need an isolated database before init_db() binds SQLAlchemy.
+        app.config['TESTING'] = True
+        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
 
     # CORS pour l'application Theia (browser 3000)
     CORS(
@@ -74,8 +81,6 @@ def create_app() -> Flask:
 
     # Initialiser le PluginManager
     from .plugins import PluginManager
-    import os
-    
     plugins_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'plugins')
     plugin_manager = PluginManager(plugins_dir, app)
     
@@ -84,7 +89,6 @@ def create_app() -> Flask:
     # Pendant les tests (TESTING=1), on skip pour éviter les conflits avec les fixtures
     import sys
     is_migration = 'flask' in sys.argv[0] and 'db' in sys.argv
-    is_testing = os.environ.get('TESTING') == '1'
     
     if auto_discover_plugins and not is_migration and not is_testing:
         with app.app_context():
@@ -118,5 +122,4 @@ def create_app() -> Flask:
     app.task_manager = task_manager
 
     return app
-
 

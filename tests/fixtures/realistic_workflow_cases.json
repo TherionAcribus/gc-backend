@@ -1,0 +1,542 @@
+[
+  {
+    "id": "secret_hint_a1z26",
+    "payload": {
+      "title": "Old station mystery",
+      "description": "Count the old benches if you want, but the real decoding clue is hidden in the hint. Decode the compact note once you spot it.",
+      "hint": "8 5 12 12 15",
+      "max_plugins": 4
+    },
+    "expected_labels": [
+      "secret_code"
+    ],
+    "expected_workflow": "secret_code",
+    "expected_plan_steps": [
+      "extract-secret-fragment",
+      "recommend-metasolver-plugins"
+    ],
+    "step_runner": {
+      "target_step_id": "execute-metasolver",
+      "execution_branch": "secret_code",
+      "expect_metasolver_result": true
+    }
+  },
+  {
+    "id": "hidden_hybrid_source",
+    "payload": {
+      "title": "Mural source note",
+      "description": "Inspect the mural photo and the page source before decoding anything.",
+      "description_html": "<div><img src=\"https://example.test/mural.png\" alt=\"wall photo\" title=\"painted clue\" /></div><!-- 8 5 12 12 15 --><span style=\"display:none\">.... . .-.. .-.. ---</span>",
+      "images": [
+        {
+          "url": "https://example.test/mural.png"
+        }
+      ],
+      "max_plugins": 4
+    },
+    "expected_labels": [
+      "hidden_content",
+      "secret_code",
+      "image_puzzle"
+    ],
+    "expected_workflow": "hidden_content",
+    "expected_plan_steps": [
+      "inspect-hidden-html"
+    ],
+    "step_runner": {
+      "target_step_id": "inspect-hidden-html",
+      "execution_branch": "hidden_content",
+      "expect_inspected": true,
+      "expected_selected_fragment_sources": [
+        "html_comment",
+        "hidden_html_text"
+      ]
+    }
+  },
+  {
+    "id": "image_visual_filename",
+    "payload": {
+      "title": "Signal mirror puzzle",
+      "description": "Inspect the attached picture, compare the symbols and rotate the image before decoding.",
+      "description_html": "<div><img src=\"https://example.test/gallery/8-5-12-12-15.png\" /></div>",
+      "images": [
+        {
+          "url": "https://example.test/gallery/8-5-12-12-15.png"
+        }
+      ],
+      "max_plugins": 4
+    },
+    "expected_labels": [
+      "image_puzzle",
+      "secret_code"
+    ],
+    "expected_workflow": "image_puzzle",
+    "expected_plan_steps": [
+      "inspect-images"
+    ],
+    "step_runner": {
+      "target_step_id": "inspect-images",
+      "execution_branch": "image_puzzle",
+      "expect_inspected": true,
+      "expected_selected_fragment_sources": [
+        "image_filename_text"
+      ],
+      "expected_recommendation_contains": "alpha_decoder"
+    }
+  },
+  {
+    "id": "formula_waypoint_checker",
+    "payload": {
+      "title": "Museum facade",
+      "description": "A. Number of windows\nB. Number of doors\nC. Number of chimneys\nCoordinates: N 47° 59.ABC E 006° 12.CBA",
+      "waypoints": [
+        {
+          "name": "Final area",
+          "latitude": 47.98538333,
+          "longitude": 6.20535,
+          "gc_coords": "N 47° 59.123 E 006° 12.321"
+        }
+      ],
+      "checkers": [
+        {
+          "name": "Certitude",
+          "url": "https://certitudes.org/certitude?wp=GC11111"
+        }
+      ],
+      "max_plugins": 4
+    },
+    "expected_labels": [
+      "formula",
+      "coord_transform",
+      "checker_available"
+    ],
+    "expected_workflow": "formula",
+    "expected_plan_steps": [
+      "detect-formulas",
+      "search-answers",
+      "calculate-final-coordinates",
+      "validate-with-checker"
+    ]
+  },
+  {
+    "id": "checker_only_validation_realistic",
+    "payload": {
+      "title": "Validation finale",
+      "description": "The field work is done. Use the provided checker to validate a final candidate before concluding.",
+      "checkers": [
+        {
+          "name": "Certitude",
+          "url": "https://certitudes.org/certitude?wp=GC22222"
+        }
+      ],
+      "max_plugins": 4
+    },
+    "expected_labels": [
+      "checker_available"
+    ],
+    "expected_workflow": "checker",
+    "expected_plan_steps": [
+      "validate-with-checker"
+    ],
+    "step_runner": {
+      "target_step_id": "validate-with-checker",
+      "execution_branch": "checker",
+      "request_overrides": {
+        "checker_candidate": "N 48 12.345 E 002 34.567",
+        "checker_name": "Certitude",
+        "checker_url": "https://certitudes.org/certitude?wp=GC22222"
+      },
+      "expected_run_status": "success",
+      "expected_checker_status": "success",
+      "expected_control_status": "stopped"
+    },
+    "mock_checker_result": {
+      "status": "success",
+      "provider": "certitudes",
+      "url": "https://certitudes.org/certitude?wp=GC22222",
+      "wp": "GC22222",
+      "interactive": true,
+      "candidate": "N 48 12.345 E 002 34.567",
+      "result": {
+        "status": "success",
+        "message": "Checker accepted the candidate",
+        "evidence": "Validated by scenario corpus"
+      }
+    }
+  },
+  {
+    "id": "projection_only",
+    "payload": {
+      "title": "Forest projection",
+      "description": "From the parking waypoint, project 315 m at bearing 120 degrees to reach the final coordinates. Use the waypoint note and the offset to compute the final.",
+      "waypoints": [
+        {
+          "name": "PARKING",
+          "latitude": 47.985383,
+          "longitude": 6.20575,
+          "note": "Parking waypoint"
+        }
+      ],
+      "max_plugins": 4
+    },
+    "expected_labels": [
+      "coord_transform"
+    ],
+    "expected_workflow": "coord_transform",
+    "expected_plan_steps": [
+      "compare-waypoints"
+    ]
+  },
+  {
+    "id": "ambiguous_hidden_image_review_realistic",
+    "payload": {
+      "title": "Hybrid clue",
+      "description": "Check the page source for clues before decoding anything.",
+      "description_html": "<div><img src=\"https://example.test/img001.png\" /></div><!-- note -->",
+      "images": [
+        {
+          "url": "https://example.test/img001.png"
+        }
+      ],
+      "max_plugins": 4
+    },
+    "expected_labels": [
+      "hidden_content",
+      "image_puzzle"
+    ],
+    "expected_plan_steps": [
+      "inspect-hidden-html",
+      "inspect-images"
+    ],
+    "expected_signal_summary": {
+      "is_hybrid_listing": true,
+      "is_ambiguous_hybrid": true,
+      "ambiguous_domains_contains": [
+        "hidden",
+        "image"
+      ]
+    }
+  },
+  {
+    "id": "hidden_external_stylesheet_realistic",
+    "payload": {
+      "title": "Courtyard chronicle",
+      "description": "Read the plaque, inspect the old postcard, and check the page source before decoding the final note.",
+      "description_html": "<link rel=\"stylesheet\" href=\"https://example.test/history.css\" /><div class=\"postcard\"><p>Visible story text only.</p><span class=\"secret-note\">8 5 12 12 15</span></div>",
+      "max_plugins": 4
+    },
+    "remote_css_map": {
+      "https://example.test/history.css": ".postcard .secret-note{display:none}"
+    },
+    "expected_labels": [
+      "hidden_content",
+      "secret_code"
+    ],
+    "expected_workflow": "hidden_content",
+    "expected_plan_steps": [
+      "inspect-hidden-html"
+    ],
+    "step_runner": {
+      "target_step_id": "inspect-hidden-html",
+      "execution_branch": "hidden_content",
+      "expect_inspected": true,
+      "expected_selected_fragment_sources": [
+        "hidden_css_text"
+      ],
+      "expected_recommendation_contains": "alpha_decoder"
+    }
+  },
+  {
+    "id": "image_qr_embedded_realistic",
+    "payload": {
+      "title": "Factory sign puzzle",
+      "description": "Inspect the rusted sign image, scan any embedded code, and only then try to decode the extracted note.",
+      "description_html": "<div><img src=\"https://example.test/factory-sign.png\" alt=\"weathered sign\" /></div>",
+      "images": [
+        {
+          "url": "https://example.test/factory-sign.png"
+        }
+      ],
+      "max_plugins": 4
+    },
+    "mock_plugin_results": {
+      "qr_code_detector": {
+        "status": "success",
+        "summary": "1 QR code detected",
+        "results": [
+          {
+            "text_output": "8 5 12 12 15",
+            "image_url": "https://example.test/factory-sign.png",
+            "confidence": 0.98
+          }
+        ]
+      },
+      "easyocr_ocr": {
+        "status": "success",
+        "summary": "0 result",
+        "results": []
+      },
+      "vision_ocr": {
+        "status": "success",
+        "summary": "0 result",
+        "results": []
+      }
+    },
+    "expected_labels": [
+      "image_puzzle"
+    ],
+    "expected_workflow": "image_puzzle",
+    "expected_plan_steps": [
+      "inspect-images"
+    ],
+    "step_runner": {
+      "target_step_id": "inspect-images",
+      "execution_branch": "image_puzzle",
+      "expect_inspected": true,
+      "expected_selected_fragment_sources": [
+        "image_qr_text"
+      ],
+      "expected_recommendation_contains": "alpha_decoder"
+    }
+  },
+  {
+    "id": "budget_exhausted_secret_realistic",
+    "payload": {
+      "title": "Secret note",
+      "description": "Decode this compact note only if budget allows it.",
+      "hint": "8 5 12 12 15",
+      "max_plugins": 4
+    },
+    "expected_labels": [
+      "secret_code"
+    ],
+    "expected_workflow": "secret_code",
+    "expected_plan_steps": [
+      "extract-secret-fragment",
+      "recommend-metasolver-plugins"
+    ],
+    "step_runner": {
+      "target_step_id": "execute-metasolver",
+      "execution_branch": "secret_code",
+      "workflow_control": {
+        "budget": {
+          "max_automated_steps": 1,
+          "max_metasolver_runs": 1,
+          "max_search_questions": 0,
+          "max_checker_runs": 1,
+          "max_coordinate_calculations": 0,
+          "max_vision_ocr_runs": 0,
+          "stop_on_checker_success": true
+        },
+        "usage": {
+          "automated_steps": 1,
+          "metasolver_runs": 1,
+          "search_questions": 0,
+          "checker_runs": 0,
+          "coordinate_calculations": 0,
+          "vision_ocr_runs": 0
+        }
+      },
+      "expected_run_status": "blocked",
+      "expected_control_status": "budget_exhausted",
+      "expected_message_contains": "budget"
+    }
+  },
+  {
+    "id": "ww2_checker_question_realistic",
+    "payload": {
+      "title": "World war bridge mission",
+      "description": "La cache ne se trouve pas aux coordonnees affichees. Pour la trouver, vous devez resoudre une petite enigme historique: Quel etait le code de la mission reussie donnant le nom de Pegasus Bridge au pont de Benouville ?",
+      "checkers": [
+        {
+          "name": "Certitude",
+          "url": "https://certitudes.org/certitude?wp=GC08484"
+        }
+      ],
+      "max_plugins": 4
+    },
+    "expected_labels": [
+      "checker_available"
+    ],
+    "expected_workflow": "checker",
+    "expected_plan_steps": [
+      "validate-with-checker"
+    ]
+  },
+  {
+    "id": "lettertour_digit_block_realistic",
+    "payload": {
+      "title": "Letter Tour digits",
+      "description": "Attention la cache n'est pas aux coordonnees affichees. Il faut resoudre cette enigme pour trouver les bonnes coordonnees. Dans cette serie, il faut passer par d'autres caches pour recuperer des tampons et obtenir les valeurs de A, B, C et D. La boite est en : 66730782726830484803347370873683033890764 68033890236804848038037809376087647033473 70846480782873076468033890236803389",
+      "max_plugins": 4
+    },
+    "expected_labels": [],
+    "expected_workflow": "general",
+    "expected_plan_steps": [
+      "classify-listing",
+      "choose-workflow"
+    ],
+    "expect_workflow_candidates": false
+  },
+  {
+    "id": "lettertour_roman_secret_realistic",
+    "payload": {
+      "title": "Letter Tour roman",
+      "description": "Attention la cache n'est pas aux coordonnees affichees. Il faut resoudre cette enigme pour trouver les bonnes coordonnees. Dans cette serie, il faut passer par d'autres caches pour recuperer des tampons et obtenir les valeurs de A, B, C et D. La boite se trouve en XLVIII XXXI.CMXII et III XXIV.LXIX",
+      "max_plugins": 4
+    },
+    "expected_labels": [
+      "secret_code"
+    ],
+    "expected_workflow": "secret_code",
+    "expected_plan_steps": [
+      "extract-secret-fragment",
+      "recommend-metasolver-plugins",
+      "execute-metasolver"
+    ],
+    "step_runner": {
+      "target_step_id": "execute-metasolver",
+      "execution_branch": "secret_code",
+      "expect_metasolver_result": true,
+      "expected_selected_fragment_sources": [
+        "description"
+      ],
+      "expected_recommendation_contains": "roman_code"
+    }
+  },
+  {
+    "id": "lettertour_templar_image_realistic",
+    "payload": {
+      "title": "Letter Tour templar image",
+      "description": "Attention la cache n'est pas aux coordonnees affichees. Il faut resoudre cette enigme pour trouver les bonnes coordonnees. Dans cette serie, il faut passer par d'autres caches pour recuperer des tampons et obtenir les valeurs de A, B, C et D. La boite se trouve dans une image contenant un code templier.",
+      "description_html": "<div><p>Attention la cache n'est pas aux coordonnees affichees.</p><img src=\"https://example.test/lettertour-templar-series.png\" alt=\"code templier\" title=\"code secret\" /></div>",
+      "images": [
+        {
+          "url": "https://example.test/lettertour-templar-series.png"
+        }
+      ],
+      "max_plugins": 4
+    },
+    "mock_plugin_results": {
+      "qr_code_detector": {
+        "status": "success",
+        "summary": "0 result",
+        "results": []
+      },
+      "easyocr_ocr": {
+        "status": "success",
+        "summary": "0 result",
+        "results": []
+      },
+      "vision_ocr": {
+        "status": "success",
+        "summary": "0 result",
+        "results": []
+      }
+    },
+    "expected_labels": [
+      "image_puzzle",
+      "secret_code"
+    ],
+    "expected_workflow": "image_puzzle",
+    "expected_plan_steps": [
+      "inspect-images"
+    ],
+    "step_runner": {
+      "target_step_id": "inspect-images",
+      "execution_branch": "image_puzzle",
+      "expect_inspected": true,
+      "expected_selected_fragment_sources": [
+        "image_filename_text",
+        "image_alt_text",
+        "image_title_text"
+      ]
+    }
+  },
+  {
+    "id": "football_formula_checker_realistic",
+    "payload": {
+      "title": "BR lois et regles du jeu",
+      "description": "Ami geocacheur, nous te proposons une serie de caches mysteres sur le theme du football. Pour chacune des questions, les reponses sont a considerer en fonction de la date de sortie de cette cache. 1 A quelle distance du milieu de la ligne de but se situe le point de penalty et a quelle loi correspond cette regle. A = en metres. B = numero de la loi. 2 Quelle est la duree maximale de la pause a la mi temps et a quelle loi correspond cette regle. C = reponse en minutes. D = numero de la loi. 3 Quelle regle concerne la loi 11. E = valeur du mot compose avec A=1 a Z=26. 4 Quelle forme avaient les premiers poteaux de but. F = nombre de lettres de la reponse. 5 Quelle ligne trouve t on au milieu d un terrain. G = valeur du mot avec A=1 a Z=26. 6 Quel mot anglais correspond au coup de pied de coin et a quelle loi correspond cette regle. H = valeur du mot. I = numero de la loi. 7 Le but mesure t il 6,32 m, 7,32 m, 8,32 m ou 9,32 m de large. J = somme des 3 chiffres. 8 Quel mot anglais correspond au coup de pied de reparation et a quelle loi correspond cette regle. K = valeur du mot. L = numero de la loi. N49 12.((A-B)*E-J) E006 00.(C+D+F+G+H+I+K+L-78)",
+      "checkers": [
+        {
+          "name": "Geocaching",
+          "url": "https://www.geocaching.com/play/checker.aspx?id=970202"
+        }
+      ],
+      "hint": "Sraqh",
+      "max_plugins": 4
+    },
+    "expected_labels": [
+      "formula",
+      "coord_transform",
+      "checker_available"
+    ],
+    "expected_workflow": "formula",
+    "expected_plan_steps": [
+      "detect-formulas",
+      "extract-questions",
+      "search-answers",
+      "calculate-final-coordinates",
+      "validate-with-checker"
+    ]
+  },
+  {
+    "id": "polyglotte_templar_image_realistic",
+    "payload": {
+      "title": "Polyglotte",
+      "description": "Serie polyglotte de caches mysteres. Le texte principal est dans une autre langue et l'image contient un code symbolique. Pour obtenir les coordonnees, indique la langue utilisee.",
+      "description_html": "<div><p>Serie polyglotte.</p><img src=\"https://example.test/polyglotte-templar.png\" alt=\"symbol code\" title=\"templier\" /></div>",
+      "images": [
+        {
+          "url": "https://example.test/polyglotte-templar.png"
+        }
+      ],
+      "checkers": [
+        {
+          "name": "Certitude",
+          "url": "https://certitudes.org/certitude?wp=GC2POLY"
+        }
+      ],
+      "hint": "qnaf PREGVGHQR",
+      "max_plugins": 4
+    },
+    "mock_plugin_results": {
+      "qr_code_detector": {
+        "status": "success",
+        "summary": "0 result",
+        "results": []
+      },
+      "easyocr_ocr": {
+        "status": "success",
+        "summary": "0 result",
+        "results": []
+      },
+      "vision_ocr": {
+        "status": "success",
+        "summary": "0 result",
+        "results": []
+      }
+    },
+    "expected_labels": [
+      "image_puzzle",
+      "checker_available",
+      "secret_code"
+    ],
+    "expected_workflow": "image_puzzle",
+    "expected_plan_steps": [
+      "inspect-images",
+      "validate-with-checker"
+    ],
+    "step_runner": {
+      "target_step_id": "inspect-images",
+      "execution_branch": "image_puzzle",
+      "expect_inspected": true,
+      "expected_selected_fragment_sources": [
+        "image_filename_text",
+        "image_alt_text",
+        "image_title_text"
+      ]
+    }
+  }
+]

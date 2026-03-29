@@ -7,6 +7,7 @@ géocache et permet la restauration lors d'un rechargement.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Statuts qui déclenchent une synchronisation (on n'archive pas les caches non travaillées)
 _ARCHIVE_STATUSES = {'in_progress', 'solved'}
+_MAX_RESOLUTION_HISTORY_ENTRIES = 12
 
 
 def _should_archive(geocache: Geocache) -> bool:
@@ -78,6 +80,107 @@ def _snapshot_waypoints(geocache: Geocache) -> str | None:
             'note_override': getattr(wp, 'note_override', None),
         })
     return json.dumps(snapshot, ensure_ascii=False) if snapshot else None
+
+
+def _build_resolution_history_signature(resume_state: dict) -> str | None:
+    if not isinstance(resume_state, dict):
+        return None
+
+    signature_payload = {
+        'currentText': resume_state.get('currentText'),
+        'recommendationSourceText': resume_state.get('recommendationSourceText'),
+        'classification': resume_state.get('classification'),
+        'recommendation': resume_state.get('recommendation'),
+        'workflowResolution': resume_state.get('workflowResolution'),
+    }
+    try:
+        normalized = json.dumps(signature_payload, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
+    except TypeError:
+        return None
+    return hashlib.sha1(normalized.encode('utf-8')).hexdigest()
+
+
+def _build_resolution_history_entry(resolution_diagnostics: dict) -> dict | None:
+    if not isinstance(resolution_diagnostics, dict):
+        return None
+
+    resume_state = resolution_diagnostics.get('resume_state')
+    if not isinstance(resume_state, dict):
+        return None
+
+    workflow_resolution = resume_state.get('workflowResolution') or {}
+    workflow = workflow_resolution.get('workflow') or {}
+    control = workflow_resolution.get('control') or {}
+    workflow_entries = resume_state.get('workflowEntries') or []
+    latest_entry = workflow_entries[0] if workflow_entries and isinstance(workflow_entries[0], dict) else None
+    state_signature = _build_resolution_history_signature(resume_state)
+    recorded_at = (
+        resolution_diagnostics.get('updated_at')
+        or resume_state.get('updatedAt')
+        or datetime.now(timezone.utc).isoformat()
+    )
+
+    return {
+        'entry_id': f"history-{(state_signature or recorded_at)[0:12]}",
+        'recorded_at': recorded_at,
+        'source': resolution_diagnostics.get('source') or 'plugin_executor_metasolver',
+        'workflow_kind': workflow.get('kind'),
+        'workflow_confidence': workflow.get('confidence'),
+        'control_status': control.get('status'),
+        'final_confidence': control.get('final_confidence'),
+        'current_text': resume_state.get('currentText') or resolution_diagnostics.get('current_text'),
+        'recommendation_source_text': resume_state.get('recommendationSourceText'),
+        'latest_event': {
+            'category': latest_entry.get('category'),
+            'message': latest_entry.get('message'),
+            'detail': latest_entry.get('detail'),
+            'timestamp': latest_entry.get('timestamp'),
+        } if latest_entry else None,
+        'state_signature': state_signature,
+        'resume_state': resume_state,
+    }
+
+
+def _extract_existing_resolution_history(existing_resolution_diagnostics: dict | None) -> list[dict]:
+    if not isinstance(existing_resolution_diagnostics, dict):
+        return []
+
+    history = [
+        item for item in (existing_resolution_diagnostics.get('history_state') or [])
+        if isinstance(item, dict)
+    ]
+    if history:
+        return history
+
+    derived_current_entry = _build_resolution_history_entry(existing_resolution_diagnostics)
+    return [derived_current_entry] if derived_current_entry else []
+
+
+def _merge_resolution_diagnostics(existing_resolution_diagnostics: dict | None, incoming_resolution_diagnostics: dict) -> dict:
+    merged = dict(incoming_resolution_diagnostics)
+    existing_history = _extract_existing_resolution_history(existing_resolution_diagnostics)
+    incoming_entry = _build_resolution_history_entry(incoming_resolution_diagnostics)
+
+    merged_history: list[dict] = []
+    seen_signatures: set[str] = set()
+
+    def push_history_entry(entry: dict | None) -> None:
+        if not isinstance(entry, dict):
+            return
+        signature = str(entry.get('state_signature') or '').strip()
+        fallback_key = f"{entry.get('recorded_at')}::{entry.get('workflow_kind')}::{entry.get('current_text')}"
+        dedupe_key = signature or fallback_key
+        if dedupe_key in seen_signatures:
+            return
+        seen_signatures.add(dedupe_key)
+        merged_history.append(entry)
+
+    push_history_entry(incoming_entry)
+    for item in existing_history:
+        push_history_entry(item)
+
+    merged['history_state'] = merged_history[:_MAX_RESOLUTION_HISTORY_ENTRIES]
+    return merged
 
 
 class ArchiveService:
@@ -263,7 +366,18 @@ class ArchiveService:
         if not entry:
             return False
         try:
-            entry.resolution_diagnostics = json.dumps(resolution_diagnostics, ensure_ascii=False)
+            existing_resolution_diagnostics = None
+            if entry.resolution_diagnostics:
+                try:
+                    existing_resolution_diagnostics = json.loads(entry.resolution_diagnostics)
+                except Exception:
+                    existing_resolution_diagnostics = None
+
+            merged_resolution_diagnostics = _merge_resolution_diagnostics(
+                existing_resolution_diagnostics,
+                resolution_diagnostics,
+            )
+            entry.resolution_diagnostics = json.dumps(merged_resolution_diagnostics, ensure_ascii=False)
             entry.updated_at = datetime.now(timezone.utc)
             db.session.commit()
             return True

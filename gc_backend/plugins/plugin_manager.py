@@ -133,9 +133,10 @@ class PluginManager:
                         )
                     
                 except Exception as e:
-                    logger.error(
-                        f"Erreur lors du chargement de {plugin_json_path}: {e}",
-                        exc_info=True
+                    logger.opt(exception=e).error(
+                        "Erreur lors du chargement de {}: {}",
+                        plugin_json_path,
+                        e,
                     )
                     self._loading_errors[str(plugin_dir)] = str(e)
         
@@ -328,9 +329,10 @@ class PluginManager:
                 
         except Exception as e:
             db.session.rollback()
-            logger.error(
-                f"Erreur DB pour plugin {plugin_info.get('name', 'unknown')}: {e}",
-                exc_info=True
+            logger.opt(exception=e).error(
+                "Erreur DB pour plugin {}: {}",
+                plugin_info.get('name', 'unknown'),
+                e,
             )
     
     def _update_plugin_fields(self, plugin: Plugin, plugin_info: Dict) -> None:
@@ -582,9 +584,10 @@ class PluginManager:
                 return wrapper
                 
         except Exception as e:
-            logger.error(
-                f"Erreur lors du chargement du plugin {plugin_name}: {e}",
-                exc_info=True
+            logger.opt(exception=e).error(
+                "Erreur lors du chargement du plugin {}: {}",
+                plugin_name,
+                e,
             )
             self._loading_errors[plugin_name] = str(e)
             return None
@@ -634,9 +637,10 @@ class PluginManager:
             return result
             
         except Exception as e:
-            logger.error(
-                f"Erreur lors de l'exécution du plugin {plugin_name}: {e}",
-                exc_info=True
+            logger.opt(exception=e).error(
+                "Erreur lors de l'exécution du plugin {}: {}",
+                plugin_name,
+                e,
             )
             return {
                 "status": "error",

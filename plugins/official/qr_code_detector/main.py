@@ -1,10 +1,10 @@
-"""Plugin MysterAI pour détecter et décoder les QR codes dans les images d'une géocache.
+﻿"""Plugin MysterAI pour dÃ©tecter et dÃ©coder les QR codes dans les images d'une gÃ©ocache.
 
-Ce plugin récupère une géocache depuis la base de données à partir de son ID,
-collecte les URLs d'images associées (champ `images` + images dans `description_html`),
-télécharge ces images et tente d'y détecter des QR codes.
+Ce plugin rÃ©cupÃ¨re une gÃ©ocache depuis la base de donnÃ©es Ã  partir de son ID,
+collecte les URLs d'images associÃ©es (champ `images` + images dans `description_html`),
+tÃ©lÃ©charge ces images et tente d'y dÃ©tecter des QR codes.
 
-La sortie est renvoyée au format standardisé attendu par le système de plugins.
+La sortie est renvoyÃ©e au format standardisÃ© attendu par le systÃ¨me de plugins.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import time
 
 from loguru import logger
 
-# Imports optionnels pour la détection de QR codes
+# Imports optionnels pour la dÃ©tection de QR codes
 try:  # pragma: no cover - gestion d'environnement dynamique
     import requests
     from PIL import Image
@@ -30,30 +30,30 @@ else:
 
 
 class QRCodeDetectorPlugin:
-    """Plugin pour détecter et décoder les QR codes dans les images d'une géocache."""
+    """Plugin pour dÃ©tecter et dÃ©coder les QR codes dans les images d'une gÃ©ocache."""
 
     def __init__(self) -> None:
         self.name = "qr_code_detector"
         self.version = "1.0.0"
         self.description = (
-            "Détecte et décode les QR codes dans les images associées à une géocache"
+            "DÃ©tecte et dÃ©code les QR codes dans les images associÃ©es Ã  une gÃ©ocache"
         )
 
     def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        """Point d'entrée principal du plugin.
+        """Point d'entrÃ©e principal du plugin.
 
         Args:
             inputs: Dictionnaire contenant au minimum `geocache_id` (str ou int).
 
         Returns:
-            Dictionnaire de résultat au format standardisé MysterAI.
+            Dictionnaire de rÃ©sultat au format standardisÃ© MysterAI.
         """
         start_time = time.time()
 
-        # Vérification des dépendances
+        # VÃ©rification des dÃ©pendances
         if IMPORT_ERROR is not None or not (requests and Image and decode_qr):
             summary = (
-                "Dépendances manquantes pour la détection de QR codes: "
+                "DÃ©pendances manquantes pour la dÃ©tection de QR codes: "
                 f"{IMPORT_ERROR}"
             )
             logger.error(summary)
@@ -68,11 +68,17 @@ class QRCodeDetectorPlugin:
 
         try:
             from gc_backend.blueprints.coordinates import detect_gps_coordinates  # type: ignore
-        except Exception:  # pragma: no cover - dépend du contexte Flask
+        except Exception:  # pragma: no cover - dÃ©pend du contexte Flask
             detect_gps_coordinates = None  # type: ignore
 
         geocache_id_raw = inputs.get("geocache_id")
-        if geocache_id_raw is None:
+        explicit_images = inputs.get("images")
+        has_explicit_images = isinstance(explicit_images, list) and any(
+            isinstance((entry.get("url") if isinstance(entry, dict) else entry), str)
+            and str(entry.get("url") if isinstance(entry, dict) else entry).strip()
+            for entry in explicit_images
+        )
+        if geocache_id_raw is None and not has_explicit_images:
             summary = "Champ 'geocache_id' manquant dans les inputs"
             logger.warning(summary)
             return {
@@ -84,58 +90,56 @@ class QRCodeDetectorPlugin:
                 "plugin_info": self._build_plugin_info(start_time),
             }
 
-        # Import lazy pour éviter les problèmes de dépendances circulaires
-        try:
-            from gc_backend.database import db
-            from gc_backend.geocaches.models import Geocache
-        except Exception as exc:  # pragma: no cover - dépend du contexte Flask
-            summary = f"Impossible d'importer les modèles Geocache: {exc}"
-            logger.error(summary)
-            return {
-                "status": "error",
-                "summary": summary,
-                "results": [],
-                "qr_codes": [],
-                "images_analyzed": 0,
-                "plugin_info": self._build_plugin_info(start_time),
-            }
-
-        geocache_id_str = str(geocache_id_raw).strip()
-
-        # 1) Tentative par ID numérique (clé primaire)
         geocache = None
-        try:
-            geocache_id_int = int(geocache_id_str)
-        except (TypeError, ValueError):  # Non numérique -> on ignore cette étape
-            geocache_id_int = None
+        if geocache_id_raw is not None:
+            # Import lazy pour éviter les problèmes de dépendances circulaires
+            try:
+                from gc_backend.database import db
+                from gc_backend.geocaches.models import Geocache
+            except Exception as exc:  # pragma: no cover - dépend du contexte Flask
+                summary = f"Impossible d'importer les modèles Geocache: {exc}"
+                logger.error(summary)
+                return {
+                    "status": "error",
+                    "summary": summary,
+                    "results": [],
+                    "qr_codes": [],
+                    "images_analyzed": 0,
+                    "plugin_info": self._build_plugin_info(start_time),
+                }
 
-        if geocache_id_int is not None:
-            geocache = db.session.query(Geocache).get(geocache_id_int)
+            geocache_id_str = str(geocache_id_raw).strip()
 
-        # 2) Si introuvable ou non numérique, tentative par code GC (gc_code)
-        if geocache is None:
-            geocache = (
-                db.session.query(Geocache)
-                .filter(Geocache.gc_code == geocache_id_str)
-                .first()
-            )
+            # 1) Tentative par ID numérique (clé primaire)
+            try:
+                geocache_id_int = int(geocache_id_str)
+            except (TypeError, ValueError):  # Non numérique -> on ignore cette étape
+                geocache_id_int = None
 
-        if not geocache:
-            summary = f"Géocache introuvable pour identifiant {geocache_id_str!r}"
-            logger.warning(summary)
-            return {
-                "status": "error",
-                "summary": summary,
-                "results": [],
-                "qr_codes": [],
-                "images_analyzed": 0,
-                "plugin_info": self._build_plugin_info(start_time),
-            }
+            if geocache_id_int is not None:
+                geocache = db.session.query(Geocache).get(geocache_id_int)
 
-        # 1) Essayer d'utiliser les images explicites passées depuis le frontend / méta-plugin
+            # 2) Si introuvable ou non numérique, tentative par code GC (gc_code)
+            if geocache is None:
+                geocache = (
+                    db.session.query(Geocache)
+                    .filter(Geocache.gc_code == geocache_id_str)
+                    .first()
+                )
+
+            if not geocache and not has_explicit_images:
+                summary = f"Géocache introuvable pour identifiant {geocache_id_str!r}"
+                logger.warning(summary)
+                return {
+                    "status": "error",
+                    "summary": summary,
+                    "results": [],
+                    "qr_codes": [],
+                    "images_analyzed": 0,
+                    "plugin_info": self._build_plugin_info(start_time),
+                }
+
         image_urls: List[str] = []
-
-        explicit_images = inputs.get("images")
         if isinstance(explicit_images, list):
             for entry in explicit_images:
                 url = None
@@ -146,14 +150,13 @@ class QRCodeDetectorPlugin:
                 if isinstance(url, str) and url.strip():
                     image_urls.append(url.strip())
 
-        # 2) Si aucune image explicite n'est fournie, retomber sur les images de la géocache en base
-        if not image_urls:
+        if not image_urls and geocache is not None:
             image_urls = self._collect_image_urls(geocache)
 
         logger.info(
-            "[qr_code_detector] %d URL(s) d'images collectées pour la géocache %s",
+            "[qr_code_detector] %d URL(s) d'images collectées pour %s",
             len(image_urls),
-            geocache.gc_code,
+            geocache.gc_code if geocache is not None else "les images explicites",
         )
 
         if not image_urls:
@@ -178,7 +181,7 @@ class QRCodeDetectorPlugin:
                 response = requests.get(full_url, timeout=10)
                 if response.status_code != 200:
                     logger.warning(
-                        "[qr_code_detector] Impossible de télécharger %s (status=%s)",
+                        "[qr_code_detector] Impossible de tÃ©lÃ©charger %s (status=%s)",
                         full_url,
                         response.status_code,
                     )
@@ -188,7 +191,7 @@ class QRCodeDetectorPlugin:
                 image = Image.open(BytesIO(response.content))
                 image = image.convert("RGB")
                 decoded_items = decode_qr(image)
-            except Exception as exc:  # pragma: no cover - dépend du contenu distant
+            except Exception as exc:  # pragma: no cover - dÃ©pend du contenu distant
                 logger.warning(
                     "[qr_code_detector] Erreur lors du traitement de %s: %s",
                     full_url,
@@ -199,6 +202,7 @@ class QRCodeDetectorPlugin:
             for decoded in decoded_items:
                 data_bytes = decoded.data or b""
                 text = data_bytes.decode("utf-8", errors="replace")
+                barcode_type = str(getattr(decoded, "type", "") or "QRCODE").strip().upper() or "QRCODE"
 
                 rect = getattr(decoded, "rect", None)
                 rect_dict = {
@@ -224,7 +228,7 @@ class QRCodeDetectorPlugin:
                 if detect_gps_coordinates and text:
                     try:
                         detection = detect_gps_coordinates(text)
-                    except Exception as exc:  # pragma: no cover - dépend du contenu
+                    except Exception as exc:  # pragma: no cover - dÃ©pend du contenu
                         logger.warning(
                             "[qr_code_detector] Erreur detect_gps_coordinates pour %s: %s",
                             full_url,
@@ -267,9 +271,10 @@ class QRCodeDetectorPlugin:
                     {
                         "id": f"qr_{qr_index}",
                         "text_output": (
-                            f"QR Code détecté dans une image: {text[:80]}"
+                            f"{barcode_type} dÃ©tectÃ© dans une image: {text[:80]}"
                         ),
                         "qr_data": text,
+                        "barcode_type": barcode_type,
                         "image_url": full_url,
                         "confidence": 1.0,
                         "coordinates": coordinates_info,
@@ -281,6 +286,7 @@ class QRCodeDetectorPlugin:
                 qr_codes.append(
                     {
                         "data": text,
+                        "type": barcode_type,
                         "image_url": full_url,
                         "rect": rect_dict,
                         "polygon": polygon_points,
@@ -288,19 +294,20 @@ class QRCodeDetectorPlugin:
                 )
 
                 logger.info(
-                    "[qr_code_detector] QR Code trouvé dans %s: %s...",
+                    "[qr_code_detector] %s trouvÃ© dans %s: %s...",
+                    barcode_type,
                     full_url,
                     text[:80],
                 )
 
         if not qr_codes:
             summary = (
-                f"Aucun QR code détecté dans {images_analyzed} image(s) analysée(s)"
+                f"Aucun QR code / code-barres dÃ©tectÃ© dans {images_analyzed} image(s) analysÃ©e(s)"
             )
         else:
             summary = (
-                f"{len(qr_codes)} QR code(s) détecté(s) dans "
-                f"{images_analyzed} image(s) analysée(s)"
+                f"{len(qr_codes)} code(s) QR / barcode dÃ©tectÃ©(s) dans "
+                f"{images_analyzed} image(s) analysÃ©e(s)"
             )
 
         return {
@@ -314,14 +321,14 @@ class QRCodeDetectorPlugin:
         }
 
     def _collect_image_urls(self, geocache: Any) -> List[str]:
-        """Collecte et déduplique les URLs d'images associées à une géocache.
+        """Collecte et dÃ©duplique les URLs d'images associÃ©es Ã  une gÃ©ocache.
 
-        - Utilise en priorité le champ `images` (liste d'objets {url: str}).
-        - Complète avec les balises <img> trouvées dans `description_html`.
+        - Utilise en prioritÃ© le champ `images` (liste d'objets {url: str}).
+        - ComplÃ¨te avec les balises <img> trouvÃ©es dans `description_html`.
         """
         urls: List[str] = []
 
-        # 1) Images stockées dans le champ JSON `images`
+        # 1) Images stockÃ©es dans le champ JSON `images`
         images_field = geocache.images or []
         if isinstance(images_field, list):
             for entry in images_field:
@@ -332,7 +339,7 @@ class QRCodeDetectorPlugin:
                 if isinstance(url, str) and url.strip():
                     urls.append(url.strip())
 
-        # 2) Images présentes dans la description HTML (fallback)
+        # 2) Images prÃ©sentes dans la description HTML (fallback)
         description_html = getattr(geocache, "description_html", None)
         if description_html:
             try:
@@ -349,7 +356,7 @@ class QRCodeDetectorPlugin:
                     exc,
                 )
 
-        # Déduplication en préservant l'ordre
+        # DÃ©duplication en prÃ©servant l'ordre
         seen = set()
         unique_urls: List[str] = []
         for url in urls:
@@ -364,7 +371,7 @@ class QRCodeDetectorPlugin:
         """Normalise une URL d'image potentiellement relative.
 
         - "//..." -> "https://..."
-        - URL relative -> préfixée par "https://www.geocaching.com"
+        - URL relative -> prÃ©fixÃ©e par "https://www.geocaching.com"
         """
         url = (url or "").strip()
         if url.startswith("//"):
@@ -374,7 +381,7 @@ class QRCodeDetectorPlugin:
         return "https://www.geocaching.com" + url
 
     def _build_plugin_info(self, start_time: float) -> Dict[str, Any]:
-        """Construit la section `plugin_info` du résultat."""
+        """Construit la section `plugin_info` du rÃ©sultat."""
         duration_ms = int((time.time() - start_time) * 1000)
         return {
             "name": self.name,
@@ -387,5 +394,6 @@ plugin = QRCodeDetectorPlugin()
 
 
 def execute(inputs: Dict[str, Any]) -> Dict[str, Any]:
-    """Fonction de compatibilité pour le chargement dynamique du plugin."""
+    """Fonction de compatibilitÃ© pour le chargement dynamique du plugin."""
     return plugin.execute(inputs)
+

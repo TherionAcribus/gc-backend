@@ -43,7 +43,8 @@ class EasyOCROcrPlugin:
             }
 
         geocache_id_raw = inputs.get("geocache_id")
-        if geocache_id_raw is None:
+        explicit_images = self._collect_explicit_images(inputs)
+        if geocache_id_raw is None and not explicit_images:
             summary = "Champ 'geocache_id' manquant dans les inputs"
             return {
                 "status": "error",
@@ -56,19 +57,21 @@ class EasyOCROcrPlugin:
         language = str(inputs.get("language") or "auto").strip().lower() or "auto"
         preprocess = str(inputs.get("preprocess") or "auto").strip().lower() or "auto"
 
-        geocache_id_str = str(geocache_id_raw).strip()
-        geocache = self._load_geocache(geocache_id_str)
-        if not geocache:
-            summary = f"Géocache introuvable pour identifiant {geocache_id_str!r}"
-            return {
-                "status": "error",
-                "summary": summary,
-                "results": [],
-                "images_analyzed": 0,
-                "plugin_info": self._build_plugin_info(start),
-            }
+        geocache = None
+        if geocache_id_raw is not None:
+            geocache_id_str = str(geocache_id_raw).strip()
+            geocache = self._load_geocache(geocache_id_str)
+            if not geocache and not explicit_images:
+                summary = f"Géocache introuvable pour identifiant {geocache_id_str!r}"
+                return {
+                    "status": "error",
+                    "summary": summary,
+                    "results": [],
+                    "images_analyzed": 0,
+                    "plugin_info": self._build_plugin_info(start),
+                }
 
-        image_urls = self._collect_explicit_images(inputs) or self._collect_image_urls(geocache)
+        image_urls = explicit_images or (self._collect_image_urls(geocache) if geocache else [])
         if not image_urls:
             return {
                 "status": "success",

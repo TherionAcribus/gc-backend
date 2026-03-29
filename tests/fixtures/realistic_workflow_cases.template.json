@@ -1,0 +1,49 @@
+[
+  {
+    "id": "replace_with_unique_case_id",
+    "payload": {
+      "title": "Anonymized listing title",
+      "description": "Plain text listing content",
+      "description_html": "<div>Optional HTML listing content</div>",
+      "hint": "Optional hint",
+      "images": [
+        {
+          "url": "https://example.test/image-1.png"
+        }
+      ],
+      "waypoints": [
+        {
+          "name": "WAYPOINT",
+          "latitude": 47.12345,
+          "longitude": 6.12345,
+          "note": "Optional waypoint note"
+        }
+      ],
+      "checkers": [
+        {
+          "name": "Certitude",
+          "url": "https://certitudes.org/certitude?wp=GC00000"
+        }
+      ],
+      "max_plugins": 4
+    },
+    "expected_labels": [
+      "secret_code"
+    ],
+    "expected_workflow": "secret_code",
+    "expected_plan_steps": [
+      "extract-secret-fragment",
+      "recommend-metasolver-plugins"
+    ],
+    "expect_workflow_candidates": true,
+    "expected_signal_summary": {
+      "is_hybrid_listing": false,
+      "is_ambiguous_hybrid": false
+    },
+    "step_runner": {
+      "target_step_id": "execute-metasolver",
+      "execution_branch": "secret_code",
+      "expect_metasolver_result": true
+    }
+  }
+]
