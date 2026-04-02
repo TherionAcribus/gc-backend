@@ -1,0 +1,74 @@
+{
+  "name": "rozier",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Chiffre de Rozier : variante du chiffre de Vigenère utilisant deux lettres consécutives de la clé. Pour chaque lettre à la position i : C[i] = (P[i] + key[i+1] - key[i]) mod 26. Équivalent à Vigenère avec une clé dérivée.",
+  "author": "MysterAI Team",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Substitution"],
+  "kinds": ["code"],
+  "brute_force": false,
+  "enable_scoring": true,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": false,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": false,
+    "include_in_decode": false
+  },
+  "input_types": {
+    "text": {
+      "type": "textarea",
+      "label": "Texte à traiter",
+      "placeholder": "Texte clair à encoder, ou texte chiffré Rozier à décoder...",
+      "required": true
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["decode", "encode"],
+      "default": "decode"
+    },
+    "key": {
+      "type": "string",
+      "label": "Clé",
+      "placeholder": "Ex: DCODE, KEY, SECRET...",
+      "required": true,
+      "description": "Clé alphabétique d'au moins 2 lettres. Les chiffres et caractères spéciaux sont ignorés."
+    },
+    "preserve_case": {
+      "type": "boolean",
+      "label": "Conserver la casse",
+      "default": true,
+      "description": "Si activé, les minuscules du texte source restent minuscules en sortie."
+    },
+    "keep_spaces": {
+      "type": "boolean",
+      "label": "Conserver espaces et ponctuation",
+      "default": true,
+      "description": "Si activé, les espaces et caractères non-alphabétiques sont conservés tels quels."
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Résultat"
+    }
+  },
+  "metasolver": {
+    "eligible": true,
+    "input_charset": "letters",
+    "tags": ["substitution", "vigenere", "periodic"],
+    "priority": 35,
+    "family": "vigenere"
+  }
+}
