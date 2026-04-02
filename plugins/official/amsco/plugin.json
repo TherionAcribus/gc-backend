@@ -1,0 +1,75 @@
+{
+  "name": "amsco",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Chiffre AMSCO (A.M.Scott, XIXe s.). Transposition colonnaire à cellules mixtes : le texte est découpé alternativement en unigrammes (1 lettre) et bigrammes (2 lettres). Nécessite une clé de permutation des colonnes.",
+  "author": "MysterAI Team",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Transposition"],
+  "kinds": ["code"],
+  "brute_force": false,
+  "enable_scoring": true,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": false,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": false,
+    "include_in_decode": false
+  },
+  "input_types": {
+    "text": {
+      "type": "textarea",
+      "label": "Texte à traiter",
+      "placeholder": "Texte clair à encoder, ou texte AMSCO à décoder...",
+      "required": true
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["decode", "encode"],
+      "default": "decode"
+    },
+    "key": {
+      "type": "string",
+      "label": "Clé de permutation",
+      "placeholder": "Ex: CLE, SECRET, GERMAN...",
+      "required": true,
+      "description": "Mot-clé définissant l'ordre de lecture des colonnes (ordre alphabétique des lettres)"
+    },
+    "sequence": {
+      "type": "select",
+      "label": "Séquence de découpe",
+      "options": ["1,2", "2,1"],
+      "default": "1,2",
+      "description": "1,2 = unigramme puis bigramme (le plus courant). 2,1 = bigramme puis unigramme."
+    },
+    "strip_spaces": {
+      "type": "boolean",
+      "label": "Supprimer les espaces (encodage)",
+      "default": true,
+      "description": "Supprimer les espaces du texte clair avant encodage"
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Résultat"
+    }
+  },
+  "metasolver": {
+    "eligible": false,
+    "input_charset": "letters",
+    "tags": ["transposition"],
+    "priority": 20,
+    "family": "amsco"
+  }
+}
