@@ -3,11 +3,11 @@ Blueprint pour les endpoints API des plugins.
 
 Ce module expose les routes REST pour :
 - Lister les plugins disponibles
-- RÃ©cupÃ©rer les informations d'un plugin
-- GÃ©nÃ©rer l'interface HTML d'un plugin
-- ExÃ©cuter un plugin (mode synchrone)
-- ExÃ©cuter des plugins en mode batch
-- RedÃ©clencher la dÃ©couverte de plugins
+- Récupérer les informations d'un plugin
+- Générer l'interface HTML d'un plugin
+- Exécuter un plugin (mode synchrone)
+- Exécuter des plugins en mode batch
+- Redéclencher la découverte de plugins
 """
 
 import html
@@ -31,10 +31,10 @@ from ..database import db
 from ..geocaches.models import Geocache
 
 
-# CrÃ©er le blueprint
+# Créer le blueprint
 bp = Blueprint('plugins', __name__, url_prefix='/api/plugins')
 
-# Instance globale du PluginManager (sera initialisÃ©e dans create_app)
+# Instance globale du PluginManager (sera initialisée dans create_app)
 _plugin_manager: PluginManager = None
 
 
@@ -42,18 +42,18 @@ def init_plugin_manager(manager: PluginManager):
     """
     Initialise le PluginManager global pour ce blueprint.
     
-    Cette fonction doit Ãªtre appelÃ©e depuis create_app() aprÃ¨s
-    la crÃ©ation du PluginManager.
+    Cette fonction doit être appelée depuis create_app() après
+    la création du PluginManager.
     
     Args:
         manager (PluginManager): Instance du gestionnaire de plugins
     """
     global _plugin_manager
     _plugin_manager = manager
-    logger.info("PluginManager initialisÃ© dans le blueprint plugins")
+    logger.info("PluginManager initialisé dans le blueprint plugins")
 
 
-# Stockage des tÃ¢ches batch en mÃ©moire (en production, utiliser Redis ou une base de donnÃ©es)
+# Stockage des tâches batch en mémoire (en production, utiliser Redis ou une base de données)
 batch_tasks: Dict[str, 'BatchPluginTask'] = {}
 
 CHEMICAL_SYMBOLS = frozenset({
@@ -375,7 +375,7 @@ def _analyze_metasolver_signature(text: str) -> Dict[str, Any]:
         and len(bacon_candidate) % 5 == 0
         and set(bacon_candidate) <= set('AB')
     )
-    looks_like_coordinate_fragment = bool(re.search(r'[NSEW]\s*\d|[0-9]+\s*[Â°Âº]|[0-9]+[.,][0-9]+', trimmed, re.IGNORECASE))
+    looks_like_coordinate_fragment = bool(re.search(r'[NSEW]\s*\d|[0-9]+\s*[°º]|[0-9]+[.,][0-9]+', trimmed, re.IGNORECASE))
 
     dominant_input_kind = _detect_dominant_input_kind(letter_count, digit_count, symbol_count, word_count)
 
@@ -459,84 +459,84 @@ def _score_metasolver_candidate(candidate: Dict[str, Any], signature: Dict[str, 
 
     if candidate_charset == dominant_kind:
         score += 40
-        reasons.append(f"Correspondance directe avec l'entrÃ©e {dominant_kind}")
+        reasons.append(f"Correspondance directe avec l'entrée {dominant_kind}")
     elif dominant_kind == 'mixed' and candidate_charset in charsets_present:
         score += 18
-        reasons.append(f"Compatible avec une entrÃ©e mixte contenant {candidate_charset}")
+        reasons.append(f"Compatible avec une entrée mixte contenant {candidate_charset}")
     elif dominant_kind == 'words' and candidate_charset == 'letters':
         score += 15
-        reasons.append("Compatible avec un texte composÃ© de mots")
+        reasons.append("Compatible avec un texte composé de mots")
     elif candidate_charset and dominant_kind not in ('mixed', 'empty'):
         score -= 10
 
     if dominant_kind in ('letters', 'words') and 'substitution' in tags:
         score += 12
-        reasons.append("Tag substitution cohÃ©rent avec une entrÃ©e textuelle")
+        reasons.append("Tag substitution cohérent avec une entrée textuelle")
 
     if dominant_kind == 'digits' and 'numeral' in tags:
         score += 20
-        reasons.append("Tag numeral cohÃ©rent avec une entrÃ©e numÃ©rique")
+        reasons.append("Tag numeral cohérent avec une entrée numérique")
 
     if signature.get('looks_like_morse'):
         if _candidate_name_matches(candidate, 'morse'):
             score += 150
-            reasons.append("Le texte ressemble fortement Ã  du Morse")
+            reasons.append("Le texte ressemble fortement à du Morse")
         elif candidate_charset == 'symbols':
             score += 12
 
     if signature.get('looks_like_binary'):
         if _candidate_name_matches(candidate, 'base', 'binary'):
             score += 100
-            reasons.append("Le texte ressemble Ã  une sÃ©quence binaire")
+            reasons.append("Le texte ressemble à une séquence binaire")
         elif 'numeral' in tags:
             score += 20
 
     if signature.get('looks_like_hex'):
         if _candidate_name_matches(candidate, 'base', 'hex'):
             score += 90
-            reasons.append("Le texte ressemble Ã  une sÃ©quence hexadÃ©cimale")
+            reasons.append("Le texte ressemble à une séquence hexadécimale")
         elif 'numeral' in tags:
             score += 20
 
     if signature.get('looks_like_phone_keypad') and _candidate_name_matches(candidate, 't9', 'phone', 'keypad'):
         score += 120
-        reasons.append("Le texte ressemble Ã  une saisie type T9")
+        reasons.append("Le texte ressemble à une saisie type T9")
 
     if signature.get('looks_like_multitap') and _candidate_name_matches(candidate, 'multitap', 'multi tap'):
         score += 140
-        reasons.append("Le texte ressemble Ã  un code Multitap")
+        reasons.append("Le texte ressemble à un code Multitap")
 
     if signature.get('looks_like_chemical_symbols') and _candidate_name_matches(candidate, 'chemical', 'element'):
         score += 140
-        reasons.append("Le texte ressemble Ã  des symboles chimiques")
+        reasons.append("Le texte ressemble à des symboles chimiques")
 
     if signature.get('looks_like_houdini_words') and _candidate_name_matches(candidate, 'houdini'):
         score += 150
-        reasons.append("Le texte ressemble Ã  du code Houdini")
+        reasons.append("Le texte ressemble à du code Houdini")
 
     if signature.get('looks_like_nak_nak') and _candidate_name_matches(candidate, 'nak'):
         score += 160
-        reasons.append("Le texte ressemble Ã  du code Nak Nak")
+        reasons.append("Le texte ressemble à du code Nak Nak")
 
     if signature.get('looks_like_shadok') and _candidate_name_matches(candidate, 'shadok'):
         score += 150
-        reasons.append("Le texte ressemble Ã  de la numÃ©ration Shadok")
+        reasons.append("Le texte ressemble à de la numération Shadok")
 
     if signature.get('looks_like_tom_tom') and _candidate_name_matches(candidate, 'tom'):
         score += 180
-        reasons.append("Le texte ressemble Ã  du code Tom Tom")
+        reasons.append("Le texte ressemble à du code Tom Tom")
 
     if signature.get('looks_like_gold_bug') and _candidate_name_matches(candidate, 'gold', 'scarab'):
         score += 180
-        reasons.append("Le texte ressemble Ã  du Gold-Bug")
+        reasons.append("Le texte ressemble à du Gold-Bug")
 
     if signature.get('looks_like_postnet') and _candidate_name_matches(candidate, 'postnet', 'barcode'):
         score += 260
-        reasons.append("Le texte ressemble Ã  un code POSTNET")
+        reasons.append("Le texte ressemble à un code POSTNET")
 
     if signature.get('looks_like_prime_sequence') and _candidate_name_matches(candidate, 'prime'):
         score += 130
-        reasons.append("Le texte ressemble Ã  une sÃ©quence de nombres premiers")
+        reasons.append("Le texte ressemble à une séquence de nombres premiers")
 
     if signature.get('looks_like_pi_index_positions') and _candidate_name_matches(candidate, 'pi'):
         score += 180
@@ -546,54 +546,54 @@ def _score_metasolver_candidate(candidate: Dict[str, Any], signature: Dict[str, 
 
     if signature.get('looks_like_roman_numerals') and _candidate_name_matches(candidate, 'roman'):
         score += 120
-        reasons.append("Le texte ressemble Ã  des chiffres romains")
+        reasons.append("Le texte ressemble à des chiffres romains")
 
     if signature.get('looks_like_polybius') and _candidate_name_matches(candidate, 'polybius', 'polybe'):
         score += 140
-        reasons.append("Le texte ressemble Ã  des coordonnÃ©es Polybe / Polybius")
+        reasons.append("Le texte ressemble à des coordonnées Polybe / Polybius")
 
     if signature.get('looks_like_tap_code') and _candidate_name_matches(candidate, 'tap'):
         score += 120
-        reasons.append("Le texte ressemble Ã  du Tap Code")
+        reasons.append("Le texte ressemble à du Tap Code")
 
     if signature.get('looks_like_decimal_sequence') and candidate_charset == 'digits':
         score += 15
-        reasons.append("EntrÃ©e dÃ©coupÃ©e en groupes numÃ©riques")
+        reasons.append("Entrée découpée en groupes numériques")
 
     if signature.get('looks_like_coordinate_fragment') and _candidate_name_matches(candidate, 'coord', 'gps'):
         score += 60
-        reasons.append("Le texte ressemble Ã  un fragment de coordonnÃ©es")
+        reasons.append("Le texte ressemble à un fragment de coordonnées")
 
     preferred_condition_map = {
-        'letters_only': (dominant_kind == 'letters', "OptimisÃƒÂ© pour une entrÃƒÂ©e uniquement en lettres"),
-        'digits_only': (dominant_kind == 'digits', "OptimisÃƒÂ© pour une entrÃƒÂ©e uniquement en chiffres"),
-        'symbols_only': (dominant_kind == 'symbols', "OptimisÃƒÂ© pour une entrÃƒÂ©e symbolique"),
-        'words_only': (dominant_kind == 'words', "OptimisÃƒÂ© pour une entrÃƒÂ©e composÃƒÂ©e de mots"),
-        'mixed_input': (dominant_kind == 'mixed', "Compatible avec une entrÃƒÂ©e mixte"),
-        'grouped_input': (int(signature.get('group_count', 0)) > 1, "Compatible avec une entrÃƒÂ©e dÃƒÂ©coupÃƒÂ©e en groupes"),
-        'short_input': (int(signature.get('non_space_length', 0)) <= 12, "Pertinent sur des entrÃƒÂ©es courtes"),
-        'long_input': (int(signature.get('non_space_length', 0)) >= 24, "Pertinent sur des entrÃƒÂ©es longues"),
-        'morse_like': (bool(signature.get('looks_like_morse')), "Le motif dÃƒÂ©tectÃƒÂ© correspond au Morse"),
-        'binary_like': (bool(signature.get('looks_like_binary')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  du binaire"),
-        'hex_like': (bool(signature.get('looks_like_hex')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  de l'hexadÃƒÂ©cimal"),
-        't9_like': (bool(signature.get('looks_like_phone_keypad')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  une saisie T9"),
-        'chemical_like': (bool(signature.get('looks_like_chemical_symbols')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  des symboles chimiques"),
-        'houdini_like': (bool(signature.get('looks_like_houdini_words')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  du code Houdini"),
-        'nak_nak_like': (bool(signature.get('looks_like_nak_nak')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  du code Nak Nak"),
-        'shadok_like': (bool(signature.get('looks_like_shadok')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  de la numÃƒÂ©ration Shadok"),
-        'tom_tom_like': (bool(signature.get('looks_like_tom_tom')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  du code Tom Tom"),
-        'gold_bug_like': (bool(signature.get('looks_like_gold_bug')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  du Gold-Bug"),
-        'postnet_like': (bool(signature.get('looks_like_postnet')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  du POSTNET"),
-        'prime_like': (bool(signature.get('looks_like_prime_sequence')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  une sÃƒÂ©quence de nombres premiers"),
+        'letters_only': (dominant_kind == 'letters', "Optimisé pour une entrée uniquement en lettres"),
+        'digits_only': (dominant_kind == 'digits', "Optimisé pour une entrée uniquement en chiffres"),
+        'symbols_only': (dominant_kind == 'symbols', "Optimisé pour une entrée symbolique"),
+        'words_only': (dominant_kind == 'words', "Optimisé pour une entrée composée de mots"),
+        'mixed_input': (dominant_kind == 'mixed', "Compatible avec une entrée mixte"),
+        'grouped_input': (int(signature.get('group_count', 0)) > 1, "Compatible avec une entrée découpée en groupes"),
+        'short_input': (int(signature.get('non_space_length', 0)) <= 12, "Pertinent sur des entrées courtes"),
+        'long_input': (int(signature.get('non_space_length', 0)) >= 24, "Pertinent sur des entrées longues"),
+        'morse_like': (bool(signature.get('looks_like_morse')), "Le motif détecté correspond au Morse"),
+        'binary_like': (bool(signature.get('looks_like_binary')), "Le motif détecté correspond à du binaire"),
+        'hex_like': (bool(signature.get('looks_like_hex')), "Le motif détecté correspond à de l'hexadécimal"),
+        't9_like': (bool(signature.get('looks_like_phone_keypad')), "Le motif détecté correspond à une saisie T9"),
+        'chemical_like': (bool(signature.get('looks_like_chemical_symbols')), "Le motif détecté correspond à des symboles chimiques"),
+        'houdini_like': (bool(signature.get('looks_like_houdini_words')), "Le motif détecté correspond à du code Houdini"),
+        'nak_nak_like': (bool(signature.get('looks_like_nak_nak')), "Le motif détecté correspond à du code Nak Nak"),
+        'shadok_like': (bool(signature.get('looks_like_shadok')), "Le motif détecté correspond à de la numération Shadok"),
+        'tom_tom_like': (bool(signature.get('looks_like_tom_tom')), "Le motif détecté correspond à du code Tom Tom"),
+        'gold_bug_like': (bool(signature.get('looks_like_gold_bug')), "Le motif détecté correspond à du Gold-Bug"),
+        'postnet_like': (bool(signature.get('looks_like_postnet')), "Le motif détecté correspond à du POSTNET"),
+        'prime_like': (bool(signature.get('looks_like_prime_sequence')), "Le motif détecté correspond à une séquence de nombres premiers"),
         'pi_index_positions_like': (bool(signature.get('looks_like_pi_index_positions')), "Le motif detecte correspond a des positions indexees pour Pi"),
-        'roman_like': (bool(signature.get('looks_like_roman_numerals')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  des chiffres romains"),
-        'a1z26_like': (bool(signature.get('looks_like_a1z26')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  un code A1Z26"),
-        'tap_code_like': (bool(signature.get('looks_like_tap_code')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  du Tap Code"),
-        'polybius_like': (bool(signature.get('looks_like_polybius')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  du Polybius"),
-        'multitap_like': (bool(signature.get('looks_like_multitap')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  du Multitap"),
-        'bacon_like': (bool(signature.get('looks_like_bacon')), "Le motif dÃƒÂ©tectÃƒÂ© correspond ÃƒÂ  du Bacon"),
-        'digit_groups': (bool(signature.get('looks_like_decimal_sequence')), "L'entrÃƒÂ©e est segmentÃƒÂ©e en groupes numÃƒÂ©riques"),
-        'coordinate_fragment': (bool(signature.get('looks_like_coordinate_fragment')), "L'entrÃƒÂ©e ressemble ÃƒÂ  un fragment de coordonnÃƒÂ©es"),
+        'roman_like': (bool(signature.get('looks_like_roman_numerals')), "Le motif détecté correspond à des chiffres romains"),
+        'a1z26_like': (bool(signature.get('looks_like_a1z26')), "Le motif détecté correspond à un code A1Z26"),
+        'tap_code_like': (bool(signature.get('looks_like_tap_code')), "Le motif détecté correspond à du Tap Code"),
+        'polybius_like': (bool(signature.get('looks_like_polybius')), "Le motif détecté correspond à du Polybius"),
+        'multitap_like': (bool(signature.get('looks_like_multitap')), "Le motif détecté correspond à du Multitap"),
+        'bacon_like': (bool(signature.get('looks_like_bacon')), "Le motif détecté correspond à du Bacon"),
+        'digit_groups': (bool(signature.get('looks_like_decimal_sequence')), "L'entrée est segmentée en groupes numériques"),
+        'coordinate_fragment': (bool(signature.get('looks_like_coordinate_fragment')), "L'entrée ressemble à un fragment de coordonnées"),
     }
 
     matched_preferences = [
@@ -607,19 +607,19 @@ def _score_metasolver_candidate(candidate: Dict[str, Any], signature: Dict[str, 
 
     if supports_grouped_input and int(signature.get('group_count', 0)) > 1:
         score += 6
-        reasons.append("Supporte explicitement les entrÃƒÂ©es groupÃƒÂ©es")
+        reasons.append("Supporte explicitement les entrées groupées")
 
     if requires_key:
         score -= 18
-        reasons.append("NÃƒÂ©cessite souvent une clÃƒÂ© ou un indice supplÃƒÂ©mentaire")
+        reasons.append("Nécessite souvent une clé ou un indice supplémentaire")
 
     if 'frequent' in tags:
         score += 8
-        reasons.append("Code frÃ©quent en gÃ©ocaching")
+        reasons.append("Code fréquent en géocaching")
 
     if 'no_key' in tags:
         score += 5
-        reasons.append("Ne nÃ©cessite pas de clÃ© explicite")
+        reasons.append("Ne nécessite pas de clé explicite")
 
     return {
         **candidate,
@@ -5455,7 +5455,7 @@ def _run_workflow_step_orchestrator(
 
 class BatchPluginTask:
     """
-    Classe pour gÃ©rer l'exÃ©cution batch d'un plugin sur plusieurs gÃ©ocaches.
+    Classe pour gérer l'exécution batch d'un plugin sur plusieurs géocaches.
     """
     
     def __init__(
@@ -5480,13 +5480,13 @@ class BatchPluginTask:
         self.app = app
         self.include_images = include_images
         
-        # Ã‰tat de la tÃ¢che
+        # État de la tâche
         self.status = 'pending'  # pending, running, completed, failed, cancelled
         self.started_at: Optional[datetime] = None
         self.completed_at: Optional[datetime] = None
         self.cancelled = False
         
-        # RÃ©sultats par gÃ©ocache
+        # Résultats par géocache
         self.results: List[Dict] = []
         for geocache in geocaches:
             self.results.append({
@@ -5504,7 +5504,7 @@ class BatchPluginTask:
     
     def execute(self):
         """
-        ExÃ©cute la tÃ¢che batch selon le mode configurÃ©.
+        Exécute la tâche batch selon le mode configuré.
         """
         try:
             self.status = 'running'
@@ -5536,7 +5536,7 @@ class BatchPluginTask:
     
     def _execute_sequential(self):
         """
-        ExÃ©cution sÃ©quentielle des gÃ©ocaches.
+        Exécution séquentielle des géocaches.
         """
         for i, geocache in enumerate(self.geocaches):
             if self.cancelled:
@@ -5549,10 +5549,10 @@ class BatchPluginTask:
             try:
                 start_time = time.time()
                 
-                # PrÃ©parer les inputs pour cette gÃ©ocache
+                # Préparer les inputs pour cette géocache
                 geocache_inputs = self._prepare_inputs_for_geocache(geocache)
                 
-                # ExÃ©cuter le plugin
+                # Exécuter le plugin
                 plugin_manager = get_plugin_manager()
                 plugin_result = plugin_manager.execute_plugin(
                     self.plugin_name, 
@@ -5561,7 +5561,7 @@ class BatchPluginTask:
                 
                 execution_time = (time.time() - start_time) * 1000  # en ms
                 
-                # Traiter les rÃ©sultats
+                # Traiter les résultats
                 processed_result = self._process_plugin_result(plugin_result, geocache)
                 
                 result.update({
@@ -5587,7 +5587,7 @@ class BatchPluginTask:
     
     def _execute_parallel(self):
         """
-        ExÃ©cution parallÃ¨le des gÃ©ocaches avec ThreadPoolExecutor.
+        Exécution parallèle des géocaches avec ThreadPoolExecutor.
         """
         def execute_single_geocache(geocache_data):
             geocache, result_index = geocache_data
@@ -5608,10 +5608,10 @@ class BatchPluginTask:
 
                 start_time = time.time()
                 
-                # PrÃ©parer les inputs pour cette gÃ©ocache
+                # Préparer les inputs pour cette géocache
                 geocache_inputs = self._prepare_inputs_for_geocache(geocache)
                 
-                # ExÃ©cuter le plugin
+                # Exécuter le plugin
                 plugin_manager = get_plugin_manager()
                 plugin_result = plugin_manager.execute_plugin(
                     self.plugin_name, 
@@ -5620,7 +5620,7 @@ class BatchPluginTask:
                 
                 execution_time = (time.time() - start_time) * 1000  # en ms
                 
-                # Traiter les rÃ©sultats
+                # Traiter les résultats
                 processed_result = self._process_plugin_result(plugin_result, geocache)
                 
                 result.update({
@@ -5651,15 +5651,15 @@ class BatchPluginTask:
             
             return result
         
-        # ExÃ©cuter en parallÃ¨le avec ThreadPoolExecutor
+        # Exécuter en parallèle avec ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=self.max_concurrency) as executor:
-            # Soumettre toutes les tÃ¢ches
+            # Soumettre toutes les tâches
             future_to_index = {
                 executor.submit(execute_single_geocache, (geocache, i)): i 
                 for i, geocache in enumerate(self.geocaches)
             }
             
-            # Traiter les rÃ©sultats au fur et Ã  mesure
+            # Traiter les résultats au fur et à mesure
             for future in as_completed(future_to_index):
                 if self.cancelled:
                     break
@@ -5675,11 +5675,11 @@ class BatchPluginTask:
     
     def _prepare_inputs_for_geocache(self, geocache: Dict) -> Dict[str, Any]:
         """
-        PrÃ©pare les inputs du plugin pour une gÃ©ocache spÃ©cifique.
+        Prépare les inputs du plugin pour une géocache spécifique.
         """
         inputs = self.inputs.copy()
         
-        # Injecter les donnÃ©es spÃ©cifiques Ã  la gÃ©ocache
+        # Injecter les données spécifiques à la géocache
         plugin_manager = get_plugin_manager()
         plugin_info = plugin_manager.get_plugin_info(self.plugin_name)
         if plugin_info and 'metadata' in plugin_info and 'input_types' in plugin_info['metadata']:
@@ -5706,7 +5706,7 @@ class BatchPluginTask:
     
     def _process_plugin_result(self, plugin_result: Dict, geocache: Dict) -> Dict:
         """
-        Traite les rÃ©sultats du plugin (dÃ©tection de coordonnÃ©es, etc.).
+        Traite les résultats du plugin (détection de coordonnées, etc.).
         """
         processed = {}
 
@@ -5759,15 +5759,15 @@ class BatchPluginTask:
                 text_output = item.get('text_output')
                 if text_output:
                     try:
-                        # Utiliser directement la fonction de dÃ©tection (pas l'API)
+                        # Utiliser directement la fonction de détection (pas l'API)
                         from gc_backend.blueprints.coordinates import detect_gps_coordinates
                         
-                        logger.info(f"[Batch] DÃ©tection de coordonnÃ©es dans: {text_output[:100]}...")
+                        logger.info(f"[Batch] Détection de coordonnées dans: {text_output[:100]}...")
                         
                         coords = detect_gps_coordinates(text_output, include_numeric_only=False)
                         
                         if coords.get('exist'):
-                            logger.info(f"[Batch] CoordonnÃ©es trouvÃ©es: {coords.get('ddm')}")
+                            logger.info(f"[Batch] Coordonnées trouvées: {coords.get('ddm')}")
                             processed['coordinates'] = {
                                 'latitude': coords.get('decimal_latitude', 0),
                                 'longitude': coords.get('decimal_longitude', 0),
@@ -5775,7 +5775,7 @@ class BatchPluginTask:
                             }
                             break
                         else:
-                            logger.info(f"[Batch] Aucune coordonnÃ©e dÃ©tectÃ©e dans ce rÃ©sultat")
+                            logger.info(f"[Batch] Aucune coordonnée détectée dans ce résultat")
                     except Exception as e:
                         logger.warning(f"Error detecting coordinates: {str(e)}")
                         import traceback
@@ -5785,7 +5785,7 @@ class BatchPluginTask:
     
     def cancel(self):
         """
-        Annule la tÃ¢che.
+        Annule la tâche.
         """
         self.cancelled = True
         if self.status == 'running':
@@ -5794,7 +5794,7 @@ class BatchPluginTask:
     
     def get_status(self) -> Dict:
         """
-        Retourne le statut actuel de la tÃ¢che.
+        Retourne le statut actuel de la tâche.
         """
         completed_count = len([r for r in self.results if r['status'] == 'completed'])
         error_count = len([r for r in self.results if r['status'] == 'error'])
@@ -5822,17 +5822,17 @@ class BatchPluginTask:
 
 def get_plugin_manager() -> PluginManager:
     """
-    RÃ©cupÃ¨re l'instance du PluginManager.
+    Récupère l'instance du PluginManager.
     
     Returns:
         PluginManager: Instance du gestionnaire
         
     Raises:
-        RuntimeError: Si le manager n'est pas initialisÃ©
+        RuntimeError: Si le manager n'est pas initialisé
     """
     if _plugin_manager is None:
         raise RuntimeError(
-            "PluginManager non initialisÃ©. "
+            "PluginManager non initialisé. "
             "Appelez init_plugin_manager() depuis create_app()"
         )
     return _plugin_manager
@@ -5846,20 +5846,20 @@ def score_text_endpoint():
         except Exception as json_error:
             return jsonify({
                 "error": "JSON invalide",
-                "message": f"Le body de la requÃªte doit Ãªtre un JSON valide: {str(json_error)}"
+                "message": f"Le body de la requête doit être un JSON valide: {str(json_error)}"
             }), 400
 
         if not data or not isinstance(data, dict):
             return jsonify({
-                "error": "RequÃªte invalide",
-                "message": "Le body doit Ãªtre un objet JSON"
+                "error": "Requête invalide",
+                "message": "Le body doit être un objet JSON"
             }), 400
 
         context = data.get('context')
         if context is not None and not isinstance(context, dict):
             return jsonify({
-                "error": "RequÃªte invalide",
-                "message": "Le champ 'context' doit Ãªtre un objet"
+                "error": "Requête invalide",
+                "message": "Le champ 'context' doit être un objet"
             }), 400
 
         from gc_backend.plugins.scoring import score_text
@@ -5868,8 +5868,8 @@ def score_text_endpoint():
             texts = data.get('texts')
             if not isinstance(texts, list) or not all(isinstance(t, str) for t in texts):
                 return jsonify({
-                    "error": "RequÃªte invalide",
-                    "message": "Le champ 'texts' doit Ãªtre une liste de strings"
+                    "error": "Requête invalide",
+                    "message": "Le champ 'texts' doit être une liste de strings"
                 }), 400
 
             results: List[Dict[str, Any]] = []
@@ -5880,7 +5880,7 @@ def score_text_endpoint():
         text = data.get('text')
         if not isinstance(text, str):
             return jsonify({
-                "error": "RequÃªte invalide",
+                "error": "Requête invalide",
                 "message": "Le champ 'text' (string) est requis"
             }), 400
 
@@ -5905,14 +5905,14 @@ def list_plugins():
     
     Query Parameters:
         source (str, optional): Filtrer par source ('official', 'custom')
-        category (str, optional): Filtrer par catÃ©gorie
+        category (str, optional): Filtrer par catégorie
         enabled (bool, optional): Filtrer par statut (true/false)
         
     Returns:
         JSON: {
             "plugins": [liste des plugins],
             "total": nombre total,
-            "filters": filtres appliquÃ©s
+            "filters": filtres appliqués
         }
         
     Example:
@@ -5924,13 +5924,13 @@ def list_plugins():
     try:
         manager = get_plugin_manager()
         
-        # RÃ©cupÃ©rer les paramÃ¨tres de filtre
+        # Récupérer les paramètres de filtre
         source = request.args.get('source')
         category = request.args.get('category')
         enabled_param = request.args.get('enabled')
         
-        # Convertir enabled en boolÃ©en
-        enabled_only = True  # Par dÃ©faut
+        # Convertir enabled en booléen
+        enabled_only = True  # Par défaut
         if enabled_param is not None:
             enabled_only = enabled_param.lower() in ['true', '1', 'yes']
         
@@ -5942,7 +5942,7 @@ def list_plugins():
         )
         
         logger.info(
-            f"Liste plugins : {len(plugins)} rÃ©sultats "
+            f"Liste plugins : {len(plugins)} résultats "
             f"(source={source}, category={category}, enabled={enabled_only})"
         )
         
@@ -5967,15 +5967,15 @@ def list_plugins():
 @bp.route('/metasolver/eligible', methods=['GET'])
 def metasolver_eligible_plugins():
     """
-    Liste les plugins Ã©ligibles au metasolver, optionnellement filtrÃ©s par preset.
+    Liste les plugins éligibles au metasolver, optionnellement filtrés par preset.
 
     Query Parameters:
-        preset (str, optional): Nom du preset Ã  appliquer (dÃ©faut: 'all')
+        preset (str, optional): Nom du preset à appliquer (défaut: 'all')
 
     Returns:
         JSON: {
             "preset": nom du preset,
-            "preset_filter": filtre appliquÃ©,
+            "preset_filter": filtre appliqué,
             "plugins": [ {name, description, input_charset, tags, priority} ],
             "total": nombre total
         }
@@ -6015,7 +6015,7 @@ def metasolver_eligible_plugins():
 @bp.route('/metasolver/recommend', methods=['POST'])
 def metasolver_recommend_plugins():
     """
-    Analyse la signature d'entrÃ©e d'un texte et recommande une sous-liste de plugins metasolver.
+    Analyse la signature d'entrée d'un texte et recommande une sous-liste de plugins metasolver.
 
     Request body:
         {
@@ -6030,19 +6030,19 @@ def metasolver_recommend_plugins():
     except Exception as json_error:
         return jsonify({
             "error": "JSON invalide",
-            "message": f"Le body doit Ãªtre un JSON valide: {str(json_error)}"
+            "message": f"Le body doit être un JSON valide: {str(json_error)}"
         }), 400
 
     if not data or not isinstance(data, dict):
         return jsonify({
-            "error": "RequÃªte invalide",
-            "message": "Le body doit Ãªtre un objet JSON"
+            "error": "Requête invalide",
+            "message": "Le body doit être un objet JSON"
         }), 400
 
     text = data.get('text')
     if not isinstance(text, str) or not text.strip():
         return jsonify({
-            "error": "RequÃªte invalide",
+            "error": "Requête invalide",
             "message": "Le champ 'text' (string non vide) est requis"
         }), 400
 
@@ -6241,18 +6241,18 @@ def run_workflow_next_step():
 @bp.route('/metasolver/execute-stream', methods=['POST'])
 def metasolver_execute_stream():
     """
-    ExÃ©cute le metasolver en mode streaming SSE.
+    Exécute le metasolver en mode streaming SSE.
 
-    Chaque sous-plugin exÃ©cutÃ© Ã©met des Ã©vÃ©nements en temps rÃ©el :
+    Chaque sous-plugin exécuté émet des événements en temps réel :
     - init         : liste des candidats
-    - plugin_start : un sous-plugin dÃ©marre
-    - plugin_done  : un sous-plugin a terminÃ© (avec rÃ©sultats)
-    - plugin_error : un sous-plugin a Ã©chouÃ©
+    - plugin_start : un sous-plugin démarre
+    - plugin_done  : un sous-plugin a terminé (avec résultats)
+    - plugin_error : un sous-plugin a échoué
     - progress     : avancement global (pourcentage)
-    - result       : rÃ©sultat final complet
+    - result       : résultat final complet
 
     Request Body (JSON):
-        inputs (dict): ParamÃ¨tres d'entrÃ©e identiques Ã  /metasolver/execute
+        inputs (dict): Paramètres d'entrée identiques à /metasolver/execute
 
     Returns:
         text/event-stream (SSE)
@@ -6269,12 +6269,12 @@ def metasolver_execute_stream():
     except Exception as json_error:
         return jsonify({
             "error": "JSON invalide",
-            "message": f"Le body doit Ãªtre un JSON valide: {str(json_error)}"
+            "message": f"Le body doit être un JSON valide: {str(json_error)}"
         }), 400
 
     if not data or 'inputs' not in data:
         return jsonify({
-            "error": "RequÃªte invalide",
+            "error": "Requête invalide",
             "message": "Le champ 'inputs' est requis"
         }), 400
 
@@ -6290,15 +6290,15 @@ def metasolver_execute_stream():
             "message": "Impossible de charger le plugin metasolver"
         }), 500
 
-    # AccÃ©der Ã  l'instance brute du plugin pour appeler execute_streaming
+    # Accéder à l'instance brute du plugin pour appeler execute_streaming
     raw_instance = getattr(wrapper, '_instance', None)
     if not raw_instance or not hasattr(raw_instance, 'execute_streaming'):
         return jsonify({
-            "error": "Streaming non supportÃ©",
+            "error": "Streaming non supporté",
             "message": "Le plugin metasolver ne supporte pas le mode streaming"
         }), 500
 
-    logger.info(f"DÃ©marrage exÃ©cution streaming metasolver avec inputs: {list(inputs.keys())}")
+    logger.info(f"Démarrage exécution streaming metasolver avec inputs: {list(inputs.keys())}")
 
     def generate():
         try:
@@ -6311,7 +6311,7 @@ def metasolver_execute_stream():
                     event_data = _json.dumps({"error": f"Serialization error: {serial_exc}"}, ensure_ascii=False)
                 logger.debug(f"[streaming] Yielding event: {event_type}")
                 yield f"event: {event_type}\ndata: {event_data}\n\n"
-            logger.info("[streaming] execute_streaming generator exhausted â€” all events sent")
+            logger.info("[streaming] execute_streaming generator exhausted — all events sent")
         except Exception as exc:
             logger.error(f"[streaming] Unhandled exception in generate(): {exc}", exc_info=True)
             error_data = _json.dumps({
@@ -6334,13 +6334,13 @@ def metasolver_execute_stream():
 @bp.route('/<plugin_name>', methods=['GET'])
 def get_plugin_info(plugin_name: str):
     """
-    RÃ©cupÃ¨re les informations dÃ©taillÃ©es d'un plugin.
+    Récupère les informations détaillées d'un plugin.
     
     Args:
         plugin_name (str): Nom du plugin
         
     Returns:
-        JSON: Informations complÃ¨tes du plugin incluant metadata
+        JSON: Informations complètes du plugin incluant metadata
         
     Example:
         GET /api/plugins/caesar
@@ -6351,23 +6351,23 @@ def get_plugin_info(plugin_name: str):
         plugin_info = manager.get_plugin_info(plugin_name)
         
         if not plugin_info:
-            logger.warning(f"Plugin non trouvÃ©: {plugin_name}")
+            logger.warning(f"Plugin non trouvé: {plugin_name}")
             return jsonify({
-                "error": "Plugin non trouvÃ©",
+                "error": "Plugin non trouvé",
                 "plugin_name": plugin_name
             }), 404
         
-        logger.info(f"Informations rÃ©cupÃ©rÃ©es pour plugin: {plugin_name}")
+        logger.info(f"Informations récupérées pour plugin: {plugin_name}")
         
         return jsonify(plugin_info), 200
         
     except Exception as e:
         logger.error(
-            f"Erreur lors de la rÃ©cupÃ©ration du plugin {plugin_name}: {e}",
+            f"Erreur lors de la récupération du plugin {plugin_name}: {e}",
             exc_info=True
         )
         return jsonify({
-            "error": "Erreur lors de la rÃ©cupÃ©ration des informations",
+            "error": "Erreur lors de la récupération des informations",
             "message": str(e)
         }), 500
 
@@ -6375,10 +6375,10 @@ def get_plugin_info(plugin_name: str):
 @bp.route('/<plugin_name>/interface', methods=['GET'])
 def get_plugin_interface(plugin_name: str):
     """
-    GÃ©nÃ¨re l'interface HTML du formulaire pour un plugin.
+    Génère l'interface HTML du formulaire pour un plugin.
     
-    L'interface est gÃ©nÃ©rÃ©e dynamiquement Ã  partir des input_types
-    dÃ©finis dans le plugin.json.
+    L'interface est générée dynamiquement à partir des input_types
+    définis dans le plugin.json.
     
     Args:
         plugin_name (str): Nom du plugin
@@ -6396,48 +6396,48 @@ def get_plugin_interface(plugin_name: str):
         
         if not plugin_info:
             return jsonify({
-                "error": "Plugin non trouvÃ©",
+                "error": "Plugin non trouvé",
                 "plugin_name": plugin_name
             }), 404
         
-        # GÃ©nÃ©rer l'interface HTML
+        # Générer l'interface HTML
         html = _generate_plugin_interface_html(plugin_info)
         
-        logger.info(f"Interface gÃ©nÃ©rÃ©e pour plugin: {plugin_name}")
+        logger.info(f"Interface générée pour plugin: {plugin_name}")
         
         return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
         
     except Exception as e:
         logger.error(
-            f"Erreur lors de la gÃ©nÃ©ration de l'interface pour {plugin_name}: {e}",
+            f"Erreur lors de la génération de l'interface pour {plugin_name}: {e}",
             exc_info=True
         )
         return jsonify({
-            "error": "Erreur lors de la gÃ©nÃ©ration de l'interface",
+            "error": "Erreur lors de la génération de l'interface",
             "message": str(e)
         }), 500
 
 
 # =============================================================================
-# Routes d'exÃ©cution
+# Routes d'exécution
 # =============================================================================
 
 @bp.route('/<plugin_name>/execute', methods=['POST'])
 def execute_plugin(plugin_name: str):
     """
-    ExÃ©cute un plugin de maniÃ¨re synchrone.
+    Exécute un plugin de manière synchrone.
     
-    Cette route est adaptÃ©e pour les plugins rapides (< 1s).
+    Cette route est adaptée pour les plugins rapides (< 1s).
     Pour les plugins longs, utiliser /api/tasks (Phase 2.2).
     
     Args:
-        plugin_name (str): Nom du plugin Ã  exÃ©cuter
+        plugin_name (str): Nom du plugin à exécuter
         
     Request Body (JSON):
-        inputs (dict): ParamÃ¨tres d'entrÃ©e du plugin
+        inputs (dict): Paramètres d'entrée du plugin
         
     Returns:
-        JSON: RÃ©sultat de l'exÃ©cution au format standardisÃ©
+        JSON: Résultat de l'exécution au format standardisé
         
     Example:
         POST /api/plugins/caesar/execute
@@ -6452,39 +6452,39 @@ def execute_plugin(plugin_name: str):
     try:
         manager = get_plugin_manager()
         
-        # RÃ©cupÃ©rer les inputs depuis le body JSON (gestion explicite des erreurs JSON)
+        # Récupérer les inputs depuis le body JSON (gestion explicite des erreurs JSON)
         try:
             data = request.get_json(force=True)
         except Exception as json_error:
             return jsonify({
                 "error": "JSON invalide",
-                "message": f"Le body de la requÃªte doit Ãªtre un JSON valide: {str(json_error)}"
+                "message": f"Le body de la requête doit être un JSON valide: {str(json_error)}"
             }), 400
         
         if not data or 'inputs' not in data:
             return jsonify({
-                "error": "RequÃªte invalide",
+                "error": "Requête invalide",
                 "message": "Le champ 'inputs' est requis dans le body JSON"
             }), 400
         
         inputs = data['inputs']
         
         logger.info(
-            f"ExÃ©cution synchrone du plugin {plugin_name} "
+            f"Exécution synchrone du plugin {plugin_name} "
             f"avec inputs: {list(inputs.keys())}"
         )
         
-        # ExÃ©cuter le plugin
+        # Exécuter le plugin
         result = manager.execute_plugin(plugin_name, inputs)
         
         if not result:
             return jsonify({
-                "error": "Erreur d'exÃ©cution",
-                "message": f"Le plugin {plugin_name} n'a pas pu Ãªtre exÃ©cutÃ©"
+                "error": "Erreur d'exécution",
+                "message": f"Le plugin {plugin_name} n'a pas pu être exécuté"
             }), 500
         
         logger.info(
-            f"Plugin {plugin_name} exÃ©cutÃ© avec succÃ¨s "
+            f"Plugin {plugin_name} exécuté avec succès "
             f"(status: {result.get('status')})"
         )
 
@@ -6533,7 +6533,7 @@ def execute_plugin(plugin_name: str):
         except Exception as e:
             logger.warning(f"Scoring integration error for {plugin_name}: {e}")
          
-        # Tracking : si le plugin s'exÃ©cute avec succÃ¨s sur une gÃ©ocache, enregistrer dans l'archive
+        # Tracking : si le plugin s'exécute avec succès sur une géocache, enregistrer dans l'archive
         try:
             geocache_id_raw = inputs.get('geocache_id')
             has_results = bool(result.get('results')) or result.get('status') == 'success'
@@ -6543,17 +6543,17 @@ def execute_plugin(plugin_name: str):
                     from ..geocaches.archive_service import ArchiveService
                     ArchiveService.add_resolution_plugin(geocache_for_tracking.gc_code, plugin_name)
         except Exception:
-            pass  # Le tracking ne doit jamais bloquer l'exÃ©cution du plugin
+            pass  # Le tracking ne doit jamais bloquer l'exécution du plugin
 
         return jsonify(result), 200
         
     except Exception as e:
         logger.error(
-            f"Erreur lors de l'exÃ©cution du plugin {plugin_name}: {e}",
+            f"Erreur lors de l'exécution du plugin {plugin_name}: {e}",
             exc_info=True
         )
         return jsonify({
-            "error": "Erreur d'exÃ©cution",
+            "error": "Erreur d'exécution",
             "message": str(e)
         }), 500
 
@@ -6565,16 +6565,16 @@ def execute_plugin(plugin_name: str):
 @bp.route('/discover', methods=['POST'])
 def discover_plugins():
     """
-    RedÃ©clenche la dÃ©couverte des plugins.
+    Redéclenche la découverte des plugins.
     
-    Scanne les rÃ©pertoires plugins/official/ et plugins/custom/
-    pour dÃ©couvrir les nouveaux plugins ou dÃ©tecter les modifications.
+    Scanne les répertoires plugins/official/ et plugins/custom/
+    pour découvrir les nouveaux plugins ou détecter les modifications.
     
     Returns:
         JSON: {
-            "discovered": nombre de plugins dÃ©couverts,
+            "discovered": nombre de plugins découverts,
             "plugins": liste des plugins,
-            "errors": erreurs Ã©ventuelles
+            "errors": erreurs éventuelles
         }
         
     Example:
@@ -6583,16 +6583,16 @@ def discover_plugins():
     try:
         manager = get_plugin_manager()
         
-        logger.info("DÃ©clenchement de la dÃ©couverte de plugins")
+        logger.info("Déclenchement de la découverte de plugins")
         
-        # Lancer la dÃ©couverte
+        # Lancer la découverte
         discovered = manager.discover_plugins()
         
-        # RÃ©cupÃ©rer les erreurs
+        # Récupérer les erreurs
         errors = manager.get_discovery_errors()
         
         logger.info(
-            f"DÃ©couverte terminÃ©e: {len(discovered)} plugins, "
+            f"Découverte terminée: {len(discovered)} plugins, "
             f"{len(errors)} erreurs"
         )
         
@@ -6600,13 +6600,13 @@ def discover_plugins():
             "discovered": len(discovered),
             "plugins": discovered,
             "errors": errors,
-            "message": f"{len(discovered)} plugin(s) dÃ©couvert(s)"
+            "message": f"{len(discovered)} plugin(s) découvert(s)"
         }), 200
         
     except Exception as e:
-        logger.error(f"Erreur lors de la dÃ©couverte: {e}", exc_info=True)
+        logger.error(f"Erreur lors de la découverte: {e}", exc_info=True)
         return jsonify({
-            "error": "Erreur lors de la dÃ©couverte",
+            "error": "Erreur lors de la découverte",
             "message": str(e)
         }), 500
 
@@ -6614,7 +6614,7 @@ def discover_plugins():
 @bp.route('/status', methods=['GET'])
 def get_plugins_status():
     """
-    RÃ©cupÃ¨re le statut de tous les plugins (enabled, loaded, errors).
+    Récupère le statut de tous les plugins (enabled, loaded, errors).
     
     Returns:
         JSON: {
@@ -6636,7 +6636,7 @@ def get_plugins_status():
         
         status = manager.get_plugin_status()
         
-        logger.info(f"Statut rÃ©cupÃ©rÃ© pour {len(status)} plugins")
+        logger.info(f"Statut récupéré pour {len(status)} plugins")
         
         return jsonify({
             "plugins": status,
@@ -6646,9 +6646,9 @@ def get_plugins_status():
         }), 200
         
     except Exception as e:
-        logger.error(f"Erreur lors de la rÃ©cupÃ©ration du statut: {e}", exc_info=True)
+        logger.error(f"Erreur lors de la récupération du statut: {e}", exc_info=True)
         return jsonify({
-            "error": "Erreur lors de la rÃ©cupÃ©ration du statut",
+            "error": "Erreur lors de la récupération du statut",
             "message": str(e)
         }), 500
 
@@ -6656,12 +6656,12 @@ def get_plugins_status():
 @bp.route('/<plugin_name>/reload', methods=['POST'])
 def reload_plugin(plugin_name: str):
     """
-    Recharge un plugin (dÃ©charge puis recharge).
+    Recharge un plugin (décharge puis recharge).
     
-    Utile aprÃ¨s modification du code du plugin.
+    Utile après modification du code du plugin.
     
     Args:
-        plugin_name (str): Nom du plugin Ã  recharger
+        plugin_name (str): Nom du plugin à recharger
         
     Returns:
         JSON: {
@@ -6682,12 +6682,12 @@ def reload_plugin(plugin_name: str):
         if success:
             return jsonify({
                 "success": True,
-                "message": f"Plugin {plugin_name} rechargÃ© avec succÃ¨s"
+                "message": f"Plugin {plugin_name} rechargé avec succès"
             }), 200
         else:
             return jsonify({
                 "success": False,
-                "message": f"Ã‰chec du rechargement du plugin {plugin_name}"
+                "message": f"Échec du rechargement du plugin {plugin_name}"
             }), 500
             
     except Exception as e:
@@ -6702,12 +6702,12 @@ def reload_plugin(plugin_name: str):
 
 
 # =============================================================================
-# Utilitaires de gÃ©nÃ©ration HTML
+# Utilitaires de génération HTML
 # =============================================================================
 
 def _generate_plugin_interface_html(plugin_info: Dict[str, Any]) -> str:
     """
-    GÃ©nÃ¨re l'interface HTML d'un plugin Ã  partir de ses mÃ©tadonnÃ©es.
+    Génère l'interface HTML d'un plugin à partir de ses métadonnées.
     
     Args:
         plugin_info (dict): Informations du plugin incluant metadata
@@ -6916,14 +6916,14 @@ def _generate_plugin_interface_html(plugin_info: Dict[str, Any]) -> str:
                 {% endfor %}
                 
                 <div class="button-group">
-                    <button type="submit" class="btn-primary">ExÃ©cuter</button>
-                    <button type="reset" class="btn-secondary">RÃ©initialiser</button>
+                    <button type="submit" class="btn-primary">Exécuter</button>
+                    <button type="reset" class="btn-secondary">Réinitialiser</button>
                 </div>
             </form>
         </div>
     </div>
     <script>
-        // PrÃ©-remplissage automatique des champs Ã  partir des paramÃ¨tres d'URL (ex: ?text=...)
+        // Pré-remplissage automatique des champs à partir des paramètres d'URL (ex: ?text=...)
         document.addEventListener('DOMContentLoaded', function() {
             const urlParams = new URLSearchParams(window.location.search);
             
@@ -6934,7 +6934,7 @@ def _generate_plugin_interface_html(plugin_info: Dict[str, Any]) -> str:
                     if (element.name && urlParams.has(element.name)) {
                         const paramValue = urlParams.get(element.name);
                         
-                        // Gestion spÃ©cifique selon le type
+                        // Gestion spécifique selon le type
                         if (element.type === 'checkbox') {
                             element.checked = paramValue === 'true' || paramValue === '1' || paramValue === 'on';
                         } else {
@@ -6962,7 +6962,7 @@ def _generate_plugin_interface_html(plugin_info: Dict[str, Any]) -> str:
 @bp.route('/batch-execute', methods=['POST'])
 def batch_execute_plugins():
     """
-    ExÃ©cute un plugin sur plusieurs gÃ©ocaches en mode batch.
+    Exécute un plugin sur plusieurs géocaches en mode batch.
     
     Request body:
     {
@@ -6989,7 +6989,7 @@ def batch_execute_plugins():
         if not data:
             return jsonify({"error": "No JSON data provided"}), 400
         
-        # Validation des paramÃ¨tres requis
+        # Validation des paramètres requis
         plugin_name = data.get('plugin_name')
         geocache_ids = data.get('geocache_ids', [])
         inputs = data.get('inputs', {})
@@ -7006,20 +7006,20 @@ def batch_execute_plugins():
         if not plugin_info:
             return jsonify({"error": f"Plugin '{plugin_name}' not found"}), 404
         
-        # Options par dÃ©faut
+        # Options par défaut
         execution_mode = options.get('execution_mode', 'sequential')
         max_concurrency = options.get('max_concurrency', 3)
         detect_coordinates = options.get('detect_coordinates', True)
         include_images = options.get('include_images', False)
         
-        # Validation du mode d'exÃ©cution
+        # Validation du mode d'exécution
         if execution_mode not in ['sequential', 'parallel']:
             return jsonify({"error": "execution_mode must be 'sequential' or 'parallel'"}), 400
         
-        # CrÃ©er une tÃ¢che batch
+        # Créer une tâche batch
         task_id = str(uuid.uuid4())
         
-        # RÃ©cupÃ©rer les informations des gÃ©ocaches
+        # Récupérer les informations des géocaches
         geocaches = []
         for gc_id in geocache_ids:
             geocache = Geocache.query.get(gc_id)
@@ -7053,7 +7053,7 @@ def batch_execute_plugins():
                 "requested_count": len(geocache_ids)
             }), 404
         
-        # DÃ©marrer la tÃ¢che en arriÃ¨re-plan
+        # Démarrer la tâche en arrière-plan
         batch_task = BatchPluginTask(
             task_id=task_id,
             plugin_name=plugin_name,
@@ -7066,10 +7066,10 @@ def batch_execute_plugins():
             include_images=include_images,
         )
         
-        # Stocker la tÃ¢che
+        # Stocker la tâche
         batch_tasks[task_id] = batch_task
         
-        # DÃ©marrer l'exÃ©cution en arriÃ¨re-plan
+        # Démarrer l'exécution en arrière-plan
         thread = threading.Thread(target=batch_task.execute)
         thread.daemon = True
         thread.start()
@@ -7089,7 +7089,7 @@ def batch_execute_plugins():
 @bp.route('/batch-status/<task_id>', methods=['GET'])
 def get_batch_status(task_id):
     """
-    RÃ©cupÃ¨re le statut d'une tÃ¢che batch.
+    Récupère le statut d'une tâche batch.
     
     Response:
     {
@@ -7111,12 +7111,12 @@ def get_batch_status(task_id):
                 "coordinates": {
                     "latitude": 48.123,
                     "longitude": 2.456,
-                    "formatted": "N 48Â° 07.380 E 002Â° 27.360"
+                    "formatted": "N 48° 07.380 E 002° 27.360"
                 }
             }
         ],
         "started_at": "2023-...",
-        "completed_at": "2023-..."  # si terminÃ©
+        "completed_at": "2023-..."  # si terminé
     }
     """
     if task_id not in batch_tasks:
@@ -7128,7 +7128,7 @@ def get_batch_status(task_id):
 @bp.route('/batch-cancel/<task_id>', methods=['POST'])
 def cancel_batch_task(task_id):
     """
-    Annule une tÃ¢che batch en cours.
+    Annule une tâche batch en cours.
     
     Response:
     {
@@ -7146,7 +7146,7 @@ def cancel_batch_task(task_id):
 @bp.route('/batch-list', methods=['GET'])
 def list_batch_tasks():
     """
-    Liste toutes les tÃ¢ches batch (actives et terminÃ©es).
+    Liste toutes les tâches batch (actives et terminées).
     
     Response:
     {

@@ -2282,7 +2282,7 @@ class TestWorkflowStepRunnerAPI:
                     'A. Number of windows\n'
                     'B. Year built minus 1900\n'
                     'C. Number of benches\n'
-                    'Coordinates: N 47Â° 59.ABC E 006Â° 12.CBA'
+                    'Coordinates: N 47° 59.ABC E 006° 12.CBA'
                 ),
                 'preferred_workflow': 'formula',
                 'target_step_id': 'search-answers',
