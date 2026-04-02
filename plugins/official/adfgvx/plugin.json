@@ -1,0 +1,69 @@
+{
+  "name": "adfgvx",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Chiffre ADFGVX (WWI, 1918). Substitution par carré de Polybe 6×6 (A-Z + 0-9) suivie d'une transposition colonnaire. Les en-têtes sont A, D, F, G, V, X.",
+  "author": "MysterAI Team",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Substitution", "Transposition", "Military"],
+  "kinds": ["code"],
+  "brute_force": false,
+  "enable_scoring": true,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": false,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": false,
+    "include_in_decode": false
+  },
+  "input_types": {
+    "text": {
+      "type": "textarea",
+      "label": "Texte à traiter",
+      "placeholder": "En décodage : texte chiffré (lettres A D F G V X). En encodage : texte clair (lettres et chiffres).",
+      "required": true
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["decode", "encode"],
+      "default": "decode"
+    },
+    "transpo_key": {
+      "type": "string",
+      "label": "Clé de transposition",
+      "placeholder": "Ex: CHAT",
+      "required": true,
+      "description": "Mot-clé pour la transposition colonnaire (obligatoire)"
+    },
+    "polybius_key": {
+      "type": "string",
+      "label": "Clé du carré de Polybe (optionnel)",
+      "placeholder": "Ex: SECRET",
+      "default": "",
+      "description": "Mot-clé pour réordonner l'alphabet dans le carré 6×6 (lettres + chiffres)"
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Résultat"
+    }
+  },
+  "metasolver": {
+    "eligible": false,
+    "input_charset": "letters",
+    "tags": ["substitution", "transposition", "military"],
+    "priority": 20,
+    "family": "adfgvx"
+  }
+}
