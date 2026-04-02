@@ -1,0 +1,69 @@
+{
+  "name": "bazeries",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Chiffre de Bazeries (Étienne Bazeries, ~1890). Combine une substitution par double grille de Polybe 5×5 (I=J) et une transposition par inversion de groupes. La clé est un nombre dont les chiffres définissent les groupes et dont l'écriture en français génère la grille de substitution.",
+  "author": "MysterAI Team",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Substitution", "Transposition"],
+  "kinds": ["code"],
+  "brute_force": false,
+  "enable_scoring": true,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": false,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": false,
+    "include_in_decode": false
+  },
+  "input_types": {
+    "text": {
+      "type": "textarea",
+      "label": "Texte à traiter",
+      "placeholder": "Texte clair à encoder, ou texte chiffré Bazeries à décoder...",
+      "required": true
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["decode", "encode"],
+      "default": "decode"
+    },
+    "key": {
+      "type": "string",
+      "label": "Clé numérique",
+      "placeholder": "Ex: 23, 314, 1914...",
+      "required": true,
+      "description": "Nombre entier entre 1 et 9999. Les chiffres définissent les groupes de transposition. L'écriture en français (ex: 23 → VINGTTROIS) génère automatiquement la grille de substitution."
+    },
+    "polybius_key": {
+      "type": "string",
+      "label": "Grille 2 personnalisée (optionnel)",
+      "placeholder": "Ex: VINGTTRIOS, SECRET...",
+      "default": "",
+      "description": "Mot-clé personnalisé pour la grille de substitution. Si vide, le mot français du nombre est utilisé automatiquement."
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Résultat"
+    }
+  },
+  "metasolver": {
+    "eligible": false,
+    "input_charset": "letters",
+    "tags": ["substitution", "transposition", "polybius"],
+    "priority": 20,
+    "family": "bazeries"
+  }
+}
