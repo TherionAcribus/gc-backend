@@ -1,0 +1,55 @@
+{
+  "name": "gray_code",
+  "version": "1.0.0",
+  "plugin_api_version": "2.0",
+  "description": "Plugin de conversion Gray Code (code binaire réfléchi). Convertit entre binaire standard et code Gray, avec sortie en décimal et ASCII.",
+  "author": "MysterAI Team",
+  "plugin_type": "python",
+  "entry_point": "main.py",
+  "dependencies": [],
+  "categories": ["Numeral", "Binary"],
+  "kinds": ["code", "calculator"],
+  "brute_force": false,
+  "enable_scoring": false,
+  "accept_accents": false,
+  "heavy_cpu": false,
+  "needs_network": false,
+  "needs_filesystem": false,
+  "timeout_seconds": 30,
+  "capabilities": {
+    "analyze": true,
+    "decode": true,
+    "encode": true
+  },
+  "defaults": {
+    "include_in_analysis": true,
+    "include_in_decode": true
+  },
+  "input_types": {
+    "text": {
+      "type": "textarea",
+      "label": "Entrée",
+      "placeholder": "Valeurs binaires (01101100), décimales (108 103) ou texte ASCII (HELLO)..."
+    },
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": ["decode", "encode", "detect"],
+      "default": "decode",
+      "description": "decode: Gray → Binaire, encode: Binaire → Gray (auto-détection du format)"
+    }
+  },
+  "output_types": {
+    "text_output": {
+      "type": "string",
+      "label": "Résultat"
+    }
+  },
+  "metasolver": {
+    "eligible": true,
+    "input_charset": "digits",
+    "tags": ["numeral", "no_key"],
+    "priority": 30,
+    "family": "numeral"
+  }
+}
