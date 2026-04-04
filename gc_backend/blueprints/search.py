@@ -313,8 +313,7 @@ def global_search():
             import os
             import json
             
-            # Chemin: gc_backend/blueprints/search.py -> gc_backend/blueprints/ -> gc_backend/ -> gc-backend/ -> alphabets/
-            alphabets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'alphabets')
+            alphabets_dir = current_app.config.get('ALPHABETS_DIR') or os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'alphabets')
             alphabet_results = []
             
             logger.debug(f"Searching alphabets in: {alphabets_dir}, exists: {os.path.exists(alphabets_dir)}")

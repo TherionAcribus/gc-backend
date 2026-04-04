@@ -11,3 +11,6 @@ class Config:
     JSON_SORT_KEYS = False
     JSON_AS_ASCII = False
 
+    PLUGINS_DIR = os.environ.get('GEOAPP_PLUGINS_DIR') or os.path.join(BASE_DIR, 'plugins')
+    ALPHABETS_DIR = os.environ.get('GEOAPP_ALPHABETS_DIR') or os.path.join(BASE_DIR, 'alphabets')
+

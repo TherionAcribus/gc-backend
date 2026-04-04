@@ -8,13 +8,21 @@ from flask import Blueprint, jsonify, send_file, request, current_app
 
 alphabets_bp = Blueprint('alphabets', __name__)
 
-# Chemin vers le répertoire des alphabets (au même niveau que plugins/)
-ALPHABETS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'alphabets')
+# Fallback si accédé hors contexte Flask (ne devrait pas arriver en pratique)
+_DEFAULT_ALPHABETS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'alphabets')
+
+
+def _get_alphabets_dir():
+    """Retourne le chemin vers le répertoire des alphabets depuis la config Flask."""
+    try:
+        return current_app.config.get('ALPHABETS_DIR') or _DEFAULT_ALPHABETS_DIR
+    except RuntimeError:
+        return _DEFAULT_ALPHABETS_DIR
 
 
 def load_alphabet_config(alphabet_id):
     """Charge la configuration d'un alphabet depuis son dossier."""
-    alphabet_path = os.path.join(ALPHABETS_DIR, alphabet_id, 'alphabet.json')
+    alphabet_path = os.path.join(_get_alphabets_dir(), alphabet_id, 'alphabet.json')
     if not os.path.exists(alphabet_path):
         return None
         
@@ -27,7 +35,7 @@ def load_alphabet_config(alphabet_id):
 
 def load_alphabet_readme(alphabet_id):
     """Charge le contenu du README d'un alphabet s'il existe."""
-    alphabet_dir = os.path.join(ALPHABETS_DIR, alphabet_id)
+    alphabet_dir = os.path.join(_get_alphabets_dir(), alphabet_id)
     possible_names = ["README.md", "Readme.md", "readme.md"]
     
     for name in possible_names:
@@ -123,9 +131,9 @@ def get_all_alphabets():
     """Récupère tous les alphabets disponibles."""
     alphabets = []
     
-    if os.path.exists(ALPHABETS_DIR):
-        for dirname in os.listdir(ALPHABETS_DIR):
-            alphabet_dir = os.path.join(ALPHABETS_DIR, dirname)
+    if os.path.exists(_get_alphabets_dir()):
+        for dirname in os.listdir(_get_alphabets_dir()):
+            alphabet_dir = os.path.join(_get_alphabets_dir(), dirname)
             if os.path.isdir(alphabet_dir):
                 config = load_alphabet_config(dirname)
                 if config:
@@ -168,7 +176,7 @@ def get_alphabets():
 @alphabets_bp.route('/api/alphabets/<alphabet_id>', methods=['GET'])
 def get_alphabet(alphabet_id):
     """Récupère la configuration complète d'un alphabet spécifique."""
-    alphabet_dir = os.path.join(ALPHABETS_DIR, alphabet_id)
+    alphabet_dir = os.path.join(_get_alphabets_dir(), alphabet_id)
     
     if not os.path.exists(alphabet_dir):
         return jsonify({"error": f"Alphabet {alphabet_id} non trouvé"}), 404
@@ -186,7 +194,7 @@ def get_alphabet_resource(alphabet_id, resource_path):
     Récupère une ressource (image ou police) d'un alphabet.
     Utilisé pour les images individuelles des symboles.
     """
-    resource_full_path = os.path.join(ALPHABETS_DIR, alphabet_id, resource_path)
+    resource_full_path = os.path.join(_get_alphabets_dir(), alphabet_id, resource_path)
     
     current_app.logger.info(f"Requested resource: {resource_full_path}")
     
@@ -212,7 +220,7 @@ def get_alphabet_font(alphabet_id):
         current_app.logger.error(f"Not a font-based alphabet: {alphabet_id}")
         return jsonify({"error": "Not a font-based alphabet"}), 404
     
-    font_path = os.path.join(ALPHABETS_DIR, alphabet_id, config['alphabetConfig']['fontFile'])
+    font_path = os.path.join(_get_alphabets_dir(), alphabet_id, config['alphabetConfig']['fontFile'])
     
     current_app.logger.info(f"Loading font: {font_path}")
     
@@ -241,7 +249,7 @@ def get_alphabet_sources(alphabet_id):
 @alphabets_bp.route('/api/alphabets/<alphabet_id>/readme', methods=['GET'])
 def get_alphabet_readme(alphabet_id):
     """Récupère le contenu du README d'un alphabet."""
-    alphabet_dir = os.path.join(ALPHABETS_DIR, alphabet_id)
+    alphabet_dir = os.path.join(_get_alphabets_dir(), alphabet_id)
     
     if not os.path.exists(alphabet_dir):
         return jsonify({"error": f"Alphabet {alphabet_id} not found"}), 404

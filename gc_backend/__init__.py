@@ -81,7 +81,7 @@ def create_app() -> Flask:
 
     # Initialiser le PluginManager
     from .plugins import PluginManager
-    plugins_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'plugins')
+    plugins_dir = app.config.get('PLUGINS_DIR') or os.path.join(os.path.dirname(os.path.dirname(__file__)), 'plugins')
     plugin_manager = PluginManager(plugins_dir, app)
     
     # Découvrir les plugins au démarrage (SAUF pendant les migrations Alembic ou les tests)
